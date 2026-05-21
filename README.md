@@ -7,6 +7,7 @@ A reusable library of prompts and skills for AI coding assistants (Claude Code, 
 | Entry | Type | Purpose |
 | --- | --- | --- |
 | [open-pr.md](open-pr.md) | Prompt / slash command | Orchestrates pull request creation with parallel validation and review |
+| [address-pr-comments.md](address-pr-comments.md) | Prompt / slash command | Systematically addresses code review comments on an existing PR |
 | [skills/](skills/) | Skills | Specialized sub-agents invoked by the orchestrator |
 
 ## Layout
@@ -67,6 +68,23 @@ Available options:
 - `/open-pr --skipBranchValidation` — skip git validation (branch already pushed and synced)
 
 See [open-pr.md](open-pr.md) for the full execution flow and the standards it enforces.
+
+## Using `/address-pr-comments`
+
+Trigger from your AI coding assistant once a PR has review feedback:
+
+```
+Address PR comments for PROJ-1234 #address-pr-comments
+```
+
+Variables you can pass:
+
+- `JIRA_STORY` — Jira ticket ID (inferred from branch/PR title if omitted)
+- `PR_NUMBER` — GitHub PR number (inferred from current branch if omitted)
+- `COMMIT_STRATEGY` — `single` (default), `individual`, or `ask`
+- `PREFERRED_REMOTE` — defaults to `origin`
+
+See [address-pr-comments.md](address-pr-comments.md) for the full workflow.
 
 ## Configuring for your project
 
