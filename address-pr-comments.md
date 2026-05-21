@@ -43,9 +43,9 @@ If none of these are available, ask the user to paste the relevant context.
 **Objective**: Establish context and verify PR accessibility
 
 #### A. Jira Story Analysis
-- Fetch the Jira ticket for `$JIRA_STORY` (use an MCP integration if available, otherwise open the URL or ask the user)
-- Extract key requirements, acceptance criteria, and any linked documentation
-- **Error Handling**: If the ticket is inaccessible, ask the user to provide a summary
+- Delegate to the [jira-validator](skills/jira-validator/SKILL.md) skill to resolve `$JIRA_STORY`, validate the `<PROJECT>-<NUMBER>` format, verify accessibility, and capture the ticket summary, status, and assignee.
+- Block on validation failures (no ticket resolvable, format invalid, ticket not accessible) before proceeding.
+- From the validated ticket, extract key requirements, acceptance criteria, and any linked documentation needed to evaluate the review feedback.
 
 #### B. PR Identification and Validation
 - If `$PR_NUMBER` is not provided:
@@ -196,6 +196,8 @@ Use the project's own scripts — inspect `package.json` `scripts` (or the relev
 
 ### 8. Commit and Push Strategy
 **Objective**: Commit changes appropriately based on the strategy
+
+All commit messages — and, if the PR title needs updating, the PR title — **must follow** the conventions defined in [skills/standards/SKILL.md](skills/standards/SKILL.md): Conventional Commits (`<type>(<scope>): <description>`), Jira-prefixed PR titles, and the workflow rules (single commit per PR when applicable, rebase over merge, format + lint gates).
 
 #### A. Commit Strategy Execution
 Based on `$COMMIT_STRATEGY`:
