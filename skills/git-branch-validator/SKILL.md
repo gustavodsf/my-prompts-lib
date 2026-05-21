@@ -1,3 +1,8 @@
+---
+name: git-branch-validator
+description: Validates git state and prepares the local branch for PR creation — enforces branch naming (<JIRA-TICKET-ID>), formats and lints changed files, rebases against the base branch, enforces a single-commit policy, and pushes the branch. Use before creating a PR.
+---
+
 # Skill: git-branch-validator
 
 Validates git state and prepares the local branch for PR creation. Skipped when `/open-pr` is invoked with `--skipBranchValidation`.
@@ -6,7 +11,7 @@ Validates git state and prepares the local branch for PR creation. Skipped when 
 
 - Current working directory (must be a git repo)
 - Current branch name
-- Project standards from [standards.md](standards.md)
+- Project standards from [../standards/SKILL.md](../standards/SKILL.md)
 
 ## Responsibilities
 

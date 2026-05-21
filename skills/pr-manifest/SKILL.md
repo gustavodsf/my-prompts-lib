@@ -1,3 +1,8 @@
+---
+name: pr-manifest
+description: Manages PR-MANIFEST.md — the shared scratchpad that coordinates output across /open-pr sub-agents. Defines the lifecycle (reset, append, read) and the exact ## section headers each sub-agent must use so Phase 4 can extract the code review for posting.
+---
+
 # Skill: PR Manifest
 
 Manages the `PR-MANIFEST.md` file used to coordinate output across the `/open-pr` sub-agents.

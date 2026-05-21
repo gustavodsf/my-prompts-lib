@@ -1,3 +1,8 @@
+---
+name: pr-creator
+description: Generates the PR title and body from validated Jira data and the squashed commit, then creates the PR on GitHub via gh pr create against the configured base branch. Runs after branch, Jira, and code-review validations have passed. Does not post the code review comment.
+---
+
 # Skill: pr-creator
 
 Generates PR content and creates the PR on GitHub. Runs in Phase 3 of `/open-pr`, after all Phase 2 validations have passed.
@@ -24,7 +29,7 @@ Generates PR content and creates the PR on GitHub. Runs in Phase 3 of `/open-pr`
 <JIRA-TICKET-ID>: <type>(<scope>): <description>
 ```
 
-The `<type>(<scope>): <description>` part must match the squashed commit subject. See [standards.md](standards.md) for valid types and scopes.
+The `<type>(<scope>): <description>` part must match the squashed commit subject. See [../standards/SKILL.md](../standards/SKILL.md) for valid types and scopes.
 
 ## Body Format
 
@@ -68,7 +73,7 @@ Capture the returned PR URL.
 
 ## Out of Scope
 
-`pr-creator` **does NOT post the code review comment**. That is exclusively owned by Phase 4 of `/open-pr` (see [open-pr.md](../open-pr.md)).
+`pr-creator` **does NOT post the code review comment**. That is exclusively owned by Phase 4 of `/open-pr` (see [../../open-pr.md](../../open-pr.md)).
 
 ## Output
 

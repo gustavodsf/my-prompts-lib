@@ -1,3 +1,8 @@
+---
+name: standards
+description: Single source of truth for git, commit, and PR conventions used by /open-pr — defines branch naming (<JIRA-TICKET-ID>), Conventional Commits types and scopes, PR title and body templates, and workflow rules (single commit per PR, rebase against base branch, format + lint gates, Jira linking).
+---
+
 # Project Standards Reference
 
 The single source of truth for git, commit, and PR conventions used by `/open-pr`.

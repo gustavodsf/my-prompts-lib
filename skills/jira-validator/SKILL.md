@@ -1,3 +1,8 @@
+---
+name: jira-validator
+description: Resolves the Jira ticket for a PR (from the -jira option or by extracting it from the branch name), validates the <PROJECT>-<NUMBER> format, verifies the ticket is reachable, and captures its summary, status, and assignee for downstream use in the PR title/body.
+---
+
 # Skill: jira-validator
 
 Resolves and validates the Jira ticket associated with the PR. Always runs as part of `/open-pr`.
