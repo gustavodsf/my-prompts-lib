@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(*cdk deploy*)",
+      "Bash(*cdk destroy*)",
+      "Bash(*db:migrate:deploy*)",
+      "Bash(*gh api*dispatches*)",
+      "Bash(*gh pr merge*)",
+      "Bash(*gh workflow enable*)",
+      "Bash(*gh workflow run*)",
+      "Bash(*git push*main*)",
+      "Bash(*prisma migrate deploy*)",
+      "Bash(*release:api*)",
+      "Bash(aws *attach*)",
+      "Bash(aws *create*)",
+      "Bash(aws *delete*)",
+      "Bash(aws *deploy*)",
+      "Bash(aws *detach*)",
+      "Bash(aws *invoke*)",
+      "Bash(aws *modify*)",
+      "Bash(aws *put*)",
+      "Bash(aws *remove*)",
+      "Bash(aws *set-*)",
+      "Bash(aws *start*)",
+      "Bash(aws *stop*)",
+      "Bash(aws *tag*)",
+      "Bash(aws *terminate*)",
+      "Bash(aws *update*)",
+      "Bash(aws *upload*)",
+      "Bash(aws s3 cp*)",
+      "Bash(aws s3 mv*)",
+      "Bash(aws s3 rm*)",
+      "Bash(aws s3 sync*)",
+      "Bash(gh pr merge*)",
+      "Bash(gh repo delete*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push origin main*)",
+      "Bash(git reset --hard*)",
+      "Bash(sudo *)"
+    ]
+  }
+}

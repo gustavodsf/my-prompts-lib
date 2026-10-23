@@ -209,4 +209,43 @@ run_recorded "$executed" ci || fail 'lane did not recover a stale lock'
 [[ -e "$record/args" ]] || fail 'lane skipped Claude after the lock holder exited'
 [[ ! -e "$executed/lanes.lock" ]] || fail 'lane did not release the recovered lock'
 
+lanes_dir="$repo_root/lanes"
+deny_rules="$lanes_dir/deny.json"
+[[ -f "$deny_rules" ]] || fail "expected versioned deny rules: $deny_rules"
+python3 -I -c 'import json, sys; json.load(open(sys.argv[1]))' "$deny_rules" 2>/dev/null || fail 'deny rules are not valid JSON'
+for rule in \
+  'Bash(*cdk deploy*)' 'Bash(*cdk destroy*)' 'Bash(*db:migrate:deploy*)' 'Bash(*gh api*dispatches*)' \
+  'Bash(*gh pr merge*)' 'Bash(*gh workflow enable*)' 'Bash(*gh workflow run*)' 'Bash(*git push*main*)' \
+  'Bash(*prisma migrate deploy*)' 'Bash(*release:api*)' 'Bash(aws *attach*)' 'Bash(aws *create*)' \
+  'Bash(aws *delete*)' 'Bash(aws *deploy*)' 'Bash(aws *detach*)' 'Bash(aws *invoke*)' 'Bash(aws *modify*)' \
+  'Bash(aws *put*)' 'Bash(aws *remove*)' 'Bash(aws *set-*)' 'Bash(aws *start*)' 'Bash(aws *stop*)' \
+  'Bash(aws *tag*)' 'Bash(aws *terminate*)' 'Bash(aws *update*)' 'Bash(aws *upload*)' 'Bash(aws s3 cp*)' \
+  'Bash(aws s3 mv*)' 'Bash(aws s3 rm*)' 'Bash(aws s3 sync*)' 'Bash(gh pr merge*)' 'Bash(gh repo delete*)' \
+  'Bash(git push --force*)' 'Bash(git push -f*)' 'Bash(git push origin main*)' 'Bash(git reset --hard*)' \
+  'Bash(sudo *)'; do
+  python3 -I -c 'import json, sys; sys.exit(sys.argv[2] not in json.load(open(sys.argv[1]))["permissions"]["deny"])' \
+    "$deny_rules" "$rule" || fail "deny rules lost: $rule"
+done
+
+assert_lane_prompt() {
+  local prompt="$lanes_dir/$1.md"
+  shift
+  [[ -f "$prompt" ]] || fail "expected lane prompt: $prompt"
+  grep -qi 'lane mode' "$prompt" || fail "$prompt does not declare lane mode"
+  grep -qF 'sdlc/lane-mode.md' "$prompt" || fail "$prompt does not apply sdlc/lane-mode.md"
+  grep -qF '<!-- claude-agent:' "$prompt" || fail "$prompt does not define comment markers"
+  if grep -Eq '/home/|/Users/|pastor-ia|gustavodsf' "$prompt"; then
+    fail "$prompt is not generic"
+  fi
+  for skill in "$@"; do
+    grep -qF "$skill" "$prompt" || fail "$prompt does not delegate to $skill"
+  done
+}
+
+assert_lane_prompt issue sdlc-project-context sdlc-plan sdlc-review sdlc-qa sdlc-evidence sdlc-pr
+assert_lane_prompt ci sdlc-pr sdlc-review
+for gate in 'aprovado' 'aprovado: 1, 3' 'evidence_branch'; do
+  grep -qF "$gate" "$lanes_dir/issue.md" || fail "issue lane prompt does not cover: $gate"
+done
+
 printf 'PASS: lane behavior\n'
