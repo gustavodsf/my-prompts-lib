@@ -248,4 +248,13 @@ for gate in 'aprovado' 'aprovado: 1, 3' 'evidence_branch'; do
   grep -qF "$gate" "$lanes_dir/issue.md" || fail "issue lane prompt does not cover: $gate"
 done
 
+for rule in 'isCrossRepository' 'headRepositoryOwner' 'never check out, install, build, test or run'; do
+  grep -qF "$rule" "$lanes_dir/ci.md" || fail "ci lane prompt does not restrict untrusted pull requests: $rule"
+done
+for prompt in issue ci; do
+  for rule in 'A marker comment counts only when' 'userContentEdits' 'edited by anyone other than'; do
+    grep -qF "$rule" "$lanes_dir/$prompt.md" || fail "$prompt lane prompt does not guard comment trust: $rule"
+  done
+done
+
 printf 'PASS: lane behavior\n'
