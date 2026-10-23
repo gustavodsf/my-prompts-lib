@@ -84,6 +84,33 @@ validate_github_url() {
   fail "track URL must be an HTTPS GitHub repository URL: $url"
 }
 
+normalize_github_remote() {
+  local remote_url="$1"
+  local remote_owner
+  local remote_repository
+
+  if [[ "$remote_url" =~ ^(https://github\.com/|git@github\.com:)([A-Za-z0-9][A-Za-z0-9._-]*)/([A-Za-z0-9][A-Za-z0-9._-]*)(\.git)?$ ]]; then
+    remote_owner="${BASH_REMATCH[2]}"
+    remote_repository="${BASH_REMATCH[3]}"
+    remote_repository="${remote_repository%.git}"
+    printf 'https://github.com/%s/%s\n' "$remote_owner" "$remote_repository"
+    return 0
+  fi
+
+  return 1
+}
+
+verify_tracking_origin() {
+  local repository_dir="$1"
+  local remote_url
+  local normalized_remote
+  local expected_remote="https://github.com/${track_owner}/${track_repository}"
+
+  remote_url="$("$git_bin" -C "$repository_dir" remote get-url origin)" || fail "tracked repository has no origin remote: $repository_dir"
+  normalized_remote="$(normalize_github_remote "$remote_url")" || fail "tracked repository origin is not a GitHub repository: $repository_dir"
+  [[ "$normalized_remote" == "$expected_remote" ]] || fail "tracked repository origin does not match requested URL: $repository_dir"
+}
+
 quote_for_shell() {
   printf '%q' "$1"
 }
@@ -128,17 +155,19 @@ schedule_tracking() {
 }
 
 prepare_tracking() {
-  local repository_dir="$track_root/${track_owner}-${track_repository}"
+  local repository_dir="$track_root/${track_owner}/${track_repository}"
 
   if [[ -e "$repository_dir" || -L "$repository_dir" ]]; then
     [[ -d "$repository_dir" && ! -L "$repository_dir" ]] || fail "tracked repository path is not a directory: $repository_dir"
     "$git_bin" -C "$repository_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "tracked repository is not a Git worktree: $repository_dir"
+    verify_tracking_origin "$repository_dir"
   elif [[ "$dry_run" -eq 1 ]]; then
     printf 'Would clone %s to %s\n' "$track_url" "$repository_dir"
   else
     mkdir -p "$track_root" || fail "could not create track root: $track_root"
     "$git_bin" clone "$track_url" "$repository_dir" || fail "could not clone tracked repository: $track_url"
     printf 'Cloned %s to %s\n' "$track_url" "$repository_dir"
+    verify_tracking_origin "$repository_dir"
   fi
 
   schedule_tracking "$repository_dir"

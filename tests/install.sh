@@ -177,9 +177,11 @@ printf '%s\n' \
   '#!/usr/bin/env bash' \
   'if [[ "$1" == "clone" ]]; then' \
   '  mkdir -p "$3/.git"' \
+  '  printf "%s\\n" "$2" > "$3/.git/origin-url"' \
   '  exit 0' \
   'fi' \
   'if [[ "$1" == "-C" && "$3" == "rev-parse" && "$4" == "--is-inside-work-tree" ]]; then exit 0; fi' \
+  'if [[ "$1" == "-C" && "$3" == "remote" && "$4" == "get-url" && "$5" == "origin" ]]; then cat "$2/.git/origin-url"; exit 0; fi' \
   'exit 1' > "$track_bin/git"
 chmod +x "$track_bin/git"
 printf '%s\n' \
@@ -195,8 +197,8 @@ TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo
 
 assert_link "$track_claude_dir/CLAUDE.md" "$source_root/CLAUDE.md"
 assert_link "$track_codex_dir/AGENTS.md" "$source_root/AGENTS.md"
-[[ -d "$track_root/example-demo/.git" ]] || fail 'track mode did not prepare a local clone'
-if ! grep -F "$source_root/scripts/monitor.sh --repo $track_root/example-demo" "$cron_file" >/dev/null; then
+[[ -d "$track_root/example/demo/.git" ]] || fail 'track mode did not prepare a local clone'
+if ! grep -F "$source_root/scripts/monitor.sh --repo $track_root/example/demo" "$cron_file" >/dev/null; then
   sed -n '1,10p' "$cron_file" >&2
   fail 'track mode did not target the cloned repository'
 fi
@@ -207,6 +209,19 @@ fi
 
 TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
 [[ "$(grep -Fc '# apolo-sdlc-track:example/demo' "$cron_file")" == 1 ]] || fail 'track mode duplicated its cron entry'
+
+TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/a-b/c --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
+TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/a/b-c --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
+[[ -d "$track_root/a-b/c/.git" && -d "$track_root/a/b-c/.git" ]] || fail 'track mode allowed distinct GitHub repositories to collide'
+[[ "$(grep -Fc '# apolo-sdlc-track:a-b/c' "$cron_file")" == 1 ]] || fail 'first collision scenario was not scheduled'
+[[ "$(grep -Fc '# apolo-sdlc-track:a/b-c' "$cron_file")" == 1 ]] || fail 'second collision scenario was not scheduled'
+
+mkdir -p "$track_root/mismatch/demo/.git"
+printf 'https://github.com/mismatch/other\n' > "$track_root/mismatch/demo/.git/origin-url"
+if TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/mismatch/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"; then
+  fail 'track mode accepted a worktree with an incompatible origin'
+fi
+[[ "$(grep -Fc '# apolo-sdlc-track:mismatch/demo' "$cron_file")" == 0 ]] || fail 'incompatible origin changed the crontab'
 
 if TEST_CRON_FILE="$cron_file" "$installer" --track 'https://github.com/example/demo?token=nope' --source "$source_root" --claude-dir "$test_root/invalid-claude" --codex-dir "$test_root/invalid-codex" --track-root "$test_root/invalid-track" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"; then
   fail 'track mode accepted an unsafe GitHub URL'
