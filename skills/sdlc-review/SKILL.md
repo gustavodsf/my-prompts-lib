@@ -9,6 +9,8 @@ version: 1.1.0
 
 **SDLC feature review:** when this skill is invoked to review an approved feature or a correction cycle, follow [feature-review.md](feature-review.md) beside this file. It orchestrates the reviewers; each reviewer applies the standard below. A pr-watchdog lane ignores this paragraph.
 
+Only in lane mode (see [../../sdlc/lane-mode.md](../../sdlc/lane-mode.md) for when it is active), also apply that file; in every other session, including pr-watchdog lanes, ignore it.
+
 **This file is the review standard.** Two callers run it:
 
 - **You, on your own branch** — `/sdlc-review` before you open a PR. Same rules the

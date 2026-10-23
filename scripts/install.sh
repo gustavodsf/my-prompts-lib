@@ -13,6 +13,18 @@ track_root="${XDG_DATA_HOME:-${HOME}/.local/share}/apolo-sdlc/projects"
 runner_root="${XDG_DATA_HOME:-${HOME}/.local/share}/apolo-sdlc/runners"
 git_bin="${GIT_BIN:-git}"
 cron_bin="${CRONTAB_BIN:-crontab}"
+gh_bin="${GH_BIN:-gh}"
+lanes=""
+lane_names=()
+checkout=""
+owner=""
+lane_backup_dir=""
+lane_created_paths=()
+lane_path=""
+lane_claude_bin=""
+lane_gh_bin=""
+lane_git_bin=""
+lane_codex_bin=""
 track_error=""
 track_created_repository=""
 track_created_dirs=()
@@ -34,7 +46,13 @@ Options:
   --track-root PATH   Directory used for tracked clones with --track.
   --git-bin PATH      Git executable used to clone with --track.
   --cron-bin PATH     Crontab executable used to schedule with --track.
-  --replace           Back up existing managed targets before linking.
+  --lanes LIST        With --track, also schedule autonomous lanes: issue, ci, or issue,ci.
+                      They run Claude unattended and write to GitHub.
+  --checkout PATH     Existing project checkout the lanes work in (required with --lanes).
+  --owner LOGIN       GitHub login whose issues and comments the lanes obey
+                      (default: the login reported by gh).
+  --gh-bin PATH       GitHub CLI executable used to resolve the owner.
+  --replace          Back up existing managed targets before linking.
   --dry-run           Print planned actions without changing files.
   --help              Show this help.
 EOF
@@ -117,6 +135,9 @@ verify_tracking_origin() {
 }
 
 validate_cron_path() {
+  # Cron and lane.sh run without a locale, so check printability the same way they will.
+  local LC_ALL=C
+
   [[ "$1" != *%* && ! "$1" =~ [^[:print:]] ]] || fail "path cannot be scheduled safely by cron: $1"
 }
 
@@ -231,18 +252,140 @@ install_runner() {
   printf 'Installed managed monitor runner at %s\n' "$runner_path"
 }
 
+write_lane_config() {
+  local runner_dir="$1"
+  local project_dir
+
+  project_dir="$(dirname "$checkout")"
+  printf '%s\n' \
+    "repo=${track_owner}/${track_repository}" \
+    "owner=$owner" \
+    "checkout=$checkout" \
+    "worktrees=$project_dir/worktrees" \
+    "docs=$project_dir/docs" \
+    "state=$runner_dir/state" \
+    'evidence_branch=qa-evidence' \
+    "claude_bin=$lane_claude_bin" \
+    "gh_bin=$lane_gh_bin" \
+    "git_bin=$lane_git_bin"
+  [[ -z "$lane_codex_bin" ]] || printf 'codex_bin=%s\n' "$lane_codex_bin"
+}
+
+# The versioned rules cannot name this runner, so the lane is denied edits to its own runner files here.
+render_runner_denies() {
+  local runner_dir="$1"
+  local rules=""
+  local rule
+
+  for rule in "Edit(/$runner_dir/lane.sh)" "Write(/$runner_dir/lane.sh)" \
+    "Edit(/$runner_dir/lanes/**)" "Write(/$runner_dir/lanes/**)" \
+    "Edit(/$runner_dir/project.conf)" "Write(/$runner_dir/project.conf)" \
+    "Bash(*$runner_dir/lanes*)" "Bash(*$runner_dir/lane.sh*)" "Bash(*$runner_dir/project.conf*)"; do
+    rules+="\"$rule\","
+  done
+  sed "s|\"deny\"[[:space:]]*:[[:space:]]*\[|&$rules|" "$source_dir/lanes/deny.json"
+}
+
+# The previous lane set is kept until the crontab update succeeds so a failure restores it intact.
+install_lane_files() {
+  local runner_dir="$1"
+  local staging
+  local entry
+  local file
+
+  for entry in lane.sh lanes project.conf state logs; do
+    [[ ! -L "$runner_dir/$entry" ]] || { track_fail "lane path must not be a symbolic link: $runner_dir/$entry"; return 1; }
+  done
+
+  lane_backup_dir="$(mktemp -d "$runner_dir/.lanes.previous.XXXXXX")" || { lane_backup_dir=""; track_fail "could not preserve existing lane files in $runner_dir"; return 1; }
+  for entry in lane.sh lanes project.conf; do
+    if [[ -e "$runner_dir/$entry" ]]; then
+      cp -Rp -- "$runner_dir/$entry" "$lane_backup_dir/$entry" || { track_fail "could not preserve existing lane file: $runner_dir/$entry"; return 1; }
+    else
+      lane_created_paths+=("$runner_dir/$entry")
+    fi
+  done
+  for entry in "$runner_dir/state" "$runner_dir/logs" "$(dirname "$checkout")/worktrees" "$(dirname "$checkout")/docs"; do
+    if [[ ! -e "$entry" && ! -L "$entry" ]]; then
+      mkdir -m 700 -- "$entry" || { track_fail "could not create lane directory: $entry"; return 1; }
+      lane_created_paths+=("$entry")
+    fi
+  done
+
+  staging="$(mktemp -d "$runner_dir/.lanes.staged.XXXXXX")" || { track_fail "could not stage lane files in $runner_dir"; return 1; }
+  if ! cp -- "$source_dir/scripts/lane.sh" "$staging/lane.sh" || ! chmod 700 "$staging/lane.sh" \
+    || ! mkdir -m 700 "$staging/lanes" \
+    || ! write_lane_config "$runner_dir" > "$staging/project.conf" || ! chmod 600 "$staging/project.conf"; then
+    rm -rf -- "$staging"
+    track_fail "could not stage lane files in $runner_dir"
+    return 1
+  fi
+  for file in issue.md ci.md; do
+    if ! cp -- "$source_dir/lanes/$file" "$staging/lanes/$file" || ! chmod 600 "$staging/lanes/$file"; then
+      rm -rf -- "$staging"
+      track_fail "could not stage lane file: $file"
+      return 1
+    fi
+  done
+  if ! render_runner_denies "$runner_dir" > "$staging/lanes/deny.json" || ! chmod 600 "$staging/lanes/deny.json" \
+    || ! grep -qF "Edit(/$runner_dir/lane.sh)" "$staging/lanes/deny.json"; then
+    rm -rf -- "$staging"
+    track_fail "could not render lane deny rules for $runner_dir"
+    return 1
+  fi
+
+  if ! rm -rf -- "$runner_dir/lanes" || ! mv -- "$staging/lanes" "$runner_dir/lanes" \
+    || ! mv -f -- "$staging/lane.sh" "$runner_dir/lane.sh" || ! mv -f -- "$staging/project.conf" "$runner_dir/project.conf"; then
+    rm -rf -- "$staging"
+    track_fail "could not install lane files in $runner_dir"
+    return 1
+  fi
+  rmdir -- "$staging"
+  printf 'Installed lane runner, prompts and configuration in %s\n' "$runner_dir"
+}
+
+rollback_lane_files() {
+  local runner_dir
+  local entry
+  local index
+  local rollback_failed=0
+
+  for ((index = ${#lane_created_paths[@]} - 1; index >= 0; index--)); do
+    rm -rf -- "${lane_created_paths[$index]}" || rollback_failed=1
+  done
+  lane_created_paths=()
+  if [[ -n "$lane_backup_dir" ]]; then
+    runner_dir="$(dirname "$lane_backup_dir")"
+    for entry in lane.sh lanes project.conf; do
+      [[ -e "$lane_backup_dir/$entry" ]] || continue
+      rm -rf -- "${runner_dir:?}/$entry" && mv -- "$lane_backup_dir/$entry" "$runner_dir/$entry" || rollback_failed=1
+    done
+    rm -rf -- "$lane_backup_dir" || rollback_failed=1
+    lane_backup_dir=""
+  fi
+
+  [[ "$rollback_failed" -eq 0 ]]
+}
+
 write_crontab() {
   local work_dir="$1"
   local marker="$2"
-  local cron_line="$3"
+  shift 2
 
   if ! "$cron_bin" -l >"$work_dir/current" 2>"$work_dir/error"; then
     grep -Eiq 'no crontab' "$work_dir/error" || { track_fail "could not read crontab using $cron_bin"; return 1; }
     : >"$work_dir/current"
   fi
-  awk -v marker="$marker" '{ start = length($0) - length(marker) + 1 } start < 1 || substr($0, start) != marker { print }' \
-    "$work_dir/current" >"$work_dir/next" || { track_fail 'could not prepare crontab update'; return 1; }
-  printf '%s\n' "$cron_line" >>"$work_dir/next" || { track_fail 'could not prepare crontab update'; return 1; }
+  awk -v markers="$marker" '
+    BEGIN { count = split(markers, list, "\n") }
+    {
+      for (i = 1; i <= count; i++) {
+        start = length($0) - length(list[i]) + 1
+        if (start >= 1 && substr($0, start) == list[i]) next
+      }
+      print
+    }' "$work_dir/current" >"$work_dir/next" || { track_fail 'could not prepare crontab update'; return 1; }
+  printf '%s\n' "$@" >>"$work_dir/next" || { track_fail 'could not prepare crontab update'; return 1; }
   "$cron_bin" "$work_dir/next" || { track_fail "could not install crontab using $cron_bin"; return 1; }
 }
 
@@ -252,27 +395,100 @@ schedule_tracking() {
   local runner_path="$runner_root/${track_owner}/${track_repository}/monitor.sh"
   local error_log="$runner_root/${track_owner}/${track_repository}/last-error.log"
   local work_dir
-  local cron_line
+  local markers
+  local lane
+  local -a cron_lines
 
   if [[ "$dry_run" -eq 1 ]]; then
     printf 'Would install managed monitor runner at %s\n' "$runner_path"
     printf 'Would add or update 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
+    if [[ -n "$lanes" ]]; then
+      printf 'Would install lane runner at %s/lane.sh\n' "$(dirname "$runner_path")"
+      printf 'Would write lane configuration %s/project.conf for owner %s and checkout %s\n' "$(dirname "$runner_path")" "$owner" "$checkout"
+      for lane in "${lane_names[@]}"; do
+        printf 'Would schedule %s lane for %s/%s\n' "$lane" "$track_owner" "$track_repository"
+      done
+    fi
     return 0
   fi
 
   install_runner "$runner_path" || return 1
+  if [[ -n "$lanes" ]]; then
+    install_lane_files "$(dirname "$runner_path")" || return 1
+  fi
 
   # Stdout is discarded; stderr is truncated each run so only the latest failure is kept.
-  cron_line="*/15 * * * * $(quote_for_shell "$runner_path") --scheduled --repo $(quote_for_shell "$repository_dir") >/dev/null 2> $(quote_for_shell "$error_log") $marker"
+  cron_lines=("*/15 * * * * $(quote_for_shell "$runner_path") --scheduled --repo $(quote_for_shell "$repository_dir") >/dev/null 2> $(quote_for_shell "$error_log") $marker")
+  markers="$marker"
+  for lane in issue ci; do
+    markers+=$'\n'"# apolo-sdlc-lane:${lane}:${track_owner}/${track_repository}"
+  done
+  for lane in ${lane_names[@]+"${lane_names[@]}"}; do
+    cron_lines+=("$(lane_cron_line "$(dirname "$runner_path")" "$lane")")
+  done
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/apolo-sdlc-cron.XXXXXX")" || { track_fail 'could not create temporary cron directory'; return 1; }
-  if ! write_crontab "$work_dir" "$marker" "$cron_line"; then
+  if ! write_crontab "$work_dir" "$markers" "${cron_lines[@]}"; then
     rm -rf -- "$work_dir"
     return 1
   fi
   rm -rf -- "$work_dir"
   [[ -z "$track_previous_runner" ]] || rm -f -- "$track_previous_runner"
   track_previous_runner=""
+  [[ -z "$lane_backup_dir" ]] || rm -rf -- "$lane_backup_dir"
+  lane_backup_dir=""
+  lane_created_paths=()
   printf 'Scheduled 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
+  for lane in ${lane_names[@]+"${lane_names[@]}"}; do
+    printf 'Scheduled %s lane for %s/%s\n' "$lane" "$track_owner" "$track_repository"
+  done
+}
+
+# The issue lane starts on the quarter hour and the ci lane 7 minutes later, so they rarely contend for the lock.
+lane_cron_line() {
+  local runner_dir="$1"
+  local lane="$2"
+  local minutes='0-59/15'
+
+  [[ "$lane" == 'issue' ]] || minutes='7-59/15'
+  printf '%s * * * * PATH=%s %s %s >/dev/null 2> %s # apolo-sdlc-lane:%s:%s/%s\n' \
+    "$minutes" "$(quote_for_shell "$lane_path")" "$(quote_for_shell "$runner_dir/lane.sh")" "$lane" \
+    "$(quote_for_shell "$runner_dir/logs/$lane-last-error.log")" "$lane" "$track_owner" "$track_repository"
+}
+
+# Version managers such as fnm expose tools through per-shell directory links, so resolve the directory but keep the
+# tool's own name: a file link like ~/.local/bin/claude -> versions/2.1.309 must stay as is to be found by name.
+resolve_tool_path() {
+  local path
+
+  path="$(command -v "$2" 2>/dev/null)" && [[ -f "$path" && -x "$path" ]] || return 1
+  printf '%s/%s\n' "$(cd -P "$(dirname "$path")" && pwd -P)" "$(basename "$path")"
+}
+
+build_lane_tools() {
+  local directory
+  local tool_path
+  local -a directories=()
+
+  lane_claude_bin="$(resolve_tool_path claude "${CLAUDE_BIN:-claude}")" || fail "claude is required by the lanes but was not found: ${CLAUDE_BIN:-claude}"
+  lane_gh_bin="$(resolve_tool_path gh "$gh_bin")" || fail "gh is required by the lanes but was not found: $gh_bin"
+  lane_git_bin="$(resolve_tool_path git "$git_bin")" || fail "git is required by the lanes but was not found: $git_bin"
+  lane_codex_bin="$(resolve_tool_path codex "${CODEX_BIN:-codex}")" || lane_codex_bin=""
+  [[ "$lanes" != *issue* || -n "$lane_codex_bin" ]] || fail "codex is required by the issue lane but was not found: ${CODEX_BIN:-codex}"
+
+  # npm-installed CLIs such as codex start with `env node`, so the lanes also need node's directory.
+  tool_path="$(resolve_tool_path node "${NODE_BIN:-node}")" || tool_path=""
+  for tool_path in "$lane_claude_bin" "$lane_gh_bin" "$lane_git_bin" "$lane_codex_bin" "$tool_path"; do
+    [[ -n "$tool_path" ]] || continue
+    validate_cron_path "$tool_path"
+    has_trusted_path "$(dirname "$tool_path")" || fail "tool directory is not trusted (writable by other users): $(dirname "$tool_path")"
+    directories+=("$(dirname "$tool_path")")
+  done
+  lane_path=""
+  for directory in "${directories[@]}" /usr/local/bin /usr/bin /bin; do
+    has_trusted_path "$(cd -P "$directory" 2>/dev/null && pwd -P)" || continue
+    [[ ":$lane_path:" == *":$directory:"* ]] || lane_path="${lane_path:+$lane_path:}$directory"
+  done
+  validate_cron_path "$lane_path"
 }
 
 prepare_tracking() {
@@ -302,6 +518,87 @@ prepare_tracking() {
   fi
 
   schedule_tracking "$repository_dir"
+}
+
+# Lanes run code from these directories unattended. Group write is accepted only for a user-private group
+# (named after the user), which grants nothing to anyone else; sticky shared directories such as /tmp are accepted.
+is_trusted_dir() {
+  local directory="$1"
+
+  [[ -d "$directory" && ! -L "$directory" ]] || return 1
+  [[ -O "$directory" || -n "$(find "$directory" -prune -user 0 -print)" ]] || return 1
+  [[ -z "$(find "$directory" -prune -perm -0002 ! -perm -1000 -print)" ]] || return 1
+  if [[ -n "$(find "$directory" -prune -perm -0020 ! -perm -1000 -print)" ]]; then
+    [[ "$(id -gn)" == "$(id -un)" && -n "$(find "$directory" -prune -group "$(id -g)" -print)" ]] || return 1
+  fi
+}
+
+has_trusted_path() {
+  local directory="$1"
+
+  while true; do
+    is_trusted_dir "$directory" || return 1
+    [[ "$directory" != "/" ]] || return 0
+    directory="$(dirname "$directory")"
+  done
+}
+
+validate_checkout_trust() {
+  local project_dir
+  local directory
+  local name
+
+  has_trusted_path "$checkout" || fail "checkout or one of its parent directories is not trusted: $checkout"
+  for directory in "$checkout/.git" "$checkout/.git/hooks" "$checkout/.claude"; do
+    [[ -e "$directory" || -L "$directory" ]] || continue
+    is_trusted_dir "$directory" || fail "directory the lanes execute from is not trusted: $directory"
+  done
+  for directory in "$checkout/.git/hooks" "$checkout/.claude"; do
+    [[ -d "$directory" ]] || continue
+    [[ -z "$(find "$directory" -perm -0002 ! -type l -print)" ]] || fail "$directory contains files writable by other users"
+  done
+  project_dir="$(dirname "$checkout")"
+  for name in worktrees docs; do
+    directory="$project_dir/$name"
+    [[ -e "$directory" || -L "$directory" ]] || continue
+    is_trusted_dir "$directory" || fail "lane $name directory must be a trusted, non-linked directory: $directory"
+  done
+}
+
+validate_lane_options() {
+  local source_file
+
+  if [[ -z "$lanes" ]]; then
+    [[ -z "$checkout" ]] || fail '--checkout requires --lanes'
+    [[ -z "$owner" ]] || fail '--owner requires --lanes'
+    return 0
+  fi
+
+  [[ "$lanes" =~ ^(issue|ci)(,(issue|ci))?$ ]] || fail "unknown lane list (use issue, ci or issue,ci): $lanes"
+  IFS=',' read -r -a lane_names <<< "$lanes"
+  [[ "${#lane_names[@]}" -eq 1 || "${lane_names[0]}" != "${lane_names[1]}" ]] || fail "repeated lane: ${lane_names[0]}"
+
+  [[ -n "$checkout" ]] || fail '--lanes requires --checkout'
+  [[ -d "$checkout" && ! -L "$checkout" ]] || fail "checkout is not a directory: $checkout"
+  checkout="$(cd -P "$checkout" && pwd -P)"
+  [[ -O "$checkout" ]] || fail "checkout must be owned by the current user: $checkout"
+  # Group write is accepted for user-private groups; only other users must be excluded.
+  [[ -z "$(find "$checkout" -prune -perm -0002 -print)" ]] || fail "checkout is writable by other users: $checkout"
+  "$git_bin" -C "$checkout" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "checkout is not a Git worktree: $checkout"
+  verify_tracking_origin "$checkout" || fail "checkout origin does not match requested URL: $checkout"
+  validate_cron_path "$checkout"
+  validate_cron_path "$(dirname "$checkout")"
+  validate_checkout_trust
+  for source_file in scripts/lane.sh lanes/issue.md lanes/ci.md lanes/deny.json; do
+    [[ -f "$source_dir/$source_file" ]] || fail "lane source file is missing: $source_dir/$source_file"
+  done
+  [[ "$runner_root" != *[\"\\\&\|\*\?\[]* ]] || fail "runner path cannot be written into deny rules safely: $runner_root"
+
+  if [[ -z "$owner" ]]; then
+    owner="$("$gh_bin" api user --jq .login 2>/dev/null)" || fail 'could not resolve the GitHub owner with gh; pass --owner'
+  fi
+  [[ "$owner" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] || fail "unsafe GitHub owner: $owner"
+  build_lane_tools
 }
 
 while [[ $# -gt 0 ]]; do
@@ -347,6 +644,26 @@ while [[ $# -gt 0 ]]; do
       cron_bin="$2"
       shift 2
       ;;
+    --lanes)
+      require_value "$1" "${2:-}"
+      lanes="$2"
+      shift 2
+      ;;
+    --checkout)
+      require_value "$1" "${2:-}"
+      checkout="$2"
+      shift 2
+      ;;
+    --owner)
+      require_value "$1" "${2:-}"
+      owner="$2"
+      shift 2
+      ;;
+    --gh-bin)
+      require_value "$1" "${2:-}"
+      gh_bin="$2"
+      shift 2
+      ;;
     --replace)
       replace=1
       shift
@@ -365,6 +682,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+[[ -z "$lanes" || -n "$track_url" ]] || fail '--lanes requires --track'
 [[ -d "$source_dir" ]] || fail "source directory does not exist: $source_dir"
 source_dir="$(cd -P "$source_dir" && pwd -P)"
 claude_dir="$(canonicalize_directory "$claude_dir")"
@@ -377,6 +695,7 @@ if [[ -n "$track_url" ]]; then
   [[ "$runner_root" != "/" ]] || fail 'unsafe runner root'
   validate_cron_path "$track_root/${track_owner}/${track_repository}"
   validate_cron_path "$runner_root/${track_owner}/${track_repository}/last-error.log"
+  validate_lane_options
 fi
 
 for directory in "$claude_dir" "$codex_dir"; do
@@ -458,6 +777,7 @@ rollback_installation() {
 rollback_tracking() {
   local rollback_failed=0
 
+  rollback_lane_files || rollback_failed=1
   if [[ -n "$track_previous_runner" ]]; then
     mv -f -- "$track_previous_runner" "$(dirname "$track_previous_runner")/monitor.sh" || rollback_failed=1
   elif [[ -n "$track_created_runner" && -e "$track_created_runner" ]]; then

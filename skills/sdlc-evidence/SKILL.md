@@ -8,6 +8,8 @@ argument-hint: "[task identifier or issue number]"
 
 Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](../../sdlc/error.md).
 
+Only in lane mode (see [../../sdlc/lane-mode.md](../../sdlc/lane-mode.md) for when it is active), also apply that file; in every other session ignore it.
+
 Use [../../sdlc/templates/evidence.md](../../sdlc/templates/evidence.md) to create or update local `project-doc/<task-or-issue-id>/evidence.md`. Use synthetic data whenever possible.
 
 ## Evidence selection
