@@ -9,20 +9,20 @@ Keep this clone available after installation: the assistants use symbolic links,
 Preview the changes first. This command never changes configuration:
 
 ```bash
-./scripts/install.sh --dry-run --replace
+./scripts/install.sh --local --dry-run --replace
 ```
 
 To install on macOS or Linux, explicitly authorize backup and replacement of existing managed targets:
 
 ```bash
-./scripts/install.sh --replace
+./scripts/install.sh --local --replace
 ```
 
 On Windows, run the equivalent command in Command Prompt:
 
 ```bat
-scripts\install.bat --dry-run --replace
-scripts\install.bat --replace
+scripts\install.bat --local --dry-run --replace
+scripts\install.bat --local --replace
 ```
 
 The installer links `CLAUDE.md` for Claude, `AGENTS.md` for Codex, and `sdlc`, `commands`, and `skills` for both. A regular pre-existing managed target is renamed in place as `<name>-old-<timestamp>` only when `--replace` is present. Existing symbolic links are refused, even with `--replace`.
@@ -59,15 +59,18 @@ The authorization state is local: `~/.local/state/apolo-sdlc/` on macOS/Linux an
 
 Use an explicit interactive session for code changes, HTTP evidence, GitHub comments, pushes, and pull requests. The scheduled monitor has no Claude executor, wrapper, AWS access, `curl`, or GitHub-write path.
 
-## Scheduling
+## GitHub tracking setup
 
-Create schedules yourself; the installer does not register cron jobs or Windows scheduled tasks. For a 15-minute macOS/Linux cron entry, use absolute paths and a log outside the repository:
+On macOS or Linux, `--track` combines local assistant configuration with a single tracked GitHub project. It validates an HTTPS GitHub repository URL, clones the project under `~/.local/share/apolo-sdlc/projects/`, and creates or updates one marked 15-minute cron entry. Preview it before making changes:
 
-```cron
-*/15 * * * * /absolute/path/to/my-prompts-lib/scripts/monitor.sh --repo /absolute/path/to/project >> /absolute/path/to/logs/apolo-sdlc-monitor.log 2>&1
+```bash
+./scripts/install.sh --track https://github.com/pastor-ia/app --dry-run --replace
+./scripts/install.sh --track https://github.com/pastor-ia/app --replace
 ```
 
-For Windows Task Scheduler, create an action that starts `scripts\monitor.bat` every 15 minutes and pass `--repo C:\absolute\path\to\project` as its arguments. The scheduled user needs an authenticated `gh` CLI; Claude is not invoked by the schedule.
+The cron entry invokes only `monitor.sh --repo <cloned-project>` and writes a local log. Re-running the same command reuses the links and clone, and replaces only its own marked cron entry; unrelated entries are preserved. It does not run Claude, use `curl` or AWS, push, comment on issues, or create pull requests.
+
+`--track` is not yet available in `install.bat`; use `--local` on Windows and create a Task Scheduler action for `scripts\monitor.bat --repo C:\absolute\path\to\project` every 15 minutes. The scheduled user needs an authenticated `gh` CLI; Claude is not invoked by the schedule.
 
 ## Workflow guarantees
 

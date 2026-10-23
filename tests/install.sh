@@ -42,13 +42,15 @@ claude_dir="$test_root/claude"
 codex_dir="$test_root/codex"
 blocked_claude_dir="$test_root/blocked-claude"
 blocked_codex_dir="$test_root/blocked-codex"
-mkdir -p "$source_root/sdlc" "$source_root/commands" "$source_root/skills/example" "$claude_dir/commands" "$codex_dir/skills" "$blocked_claude_dir" "$blocked_codex_dir"
+mkdir -p "$source_root/sdlc" "$source_root/commands" "$source_root/skills/example" "$source_root/scripts" "$claude_dir/commands" "$codex_dir/skills" "$blocked_claude_dir" "$blocked_codex_dir"
 source_root="$(cd -P "$source_root" && pwd -P)"
 printf 'claude rules\n' > "$source_root/CLAUDE.md"
 printf 'codex rules\n' > "$source_root/AGENTS.md"
 printf 'error catalog\n' > "$source_root/sdlc/error.md"
 printf 'command\n' > "$source_root/commands/context.md"
 printf 'skill\n' > "$source_root/skills/example/SKILL.md"
+printf '#!/usr/bin/env bash\n' > "$source_root/scripts/monitor.sh"
+chmod +x "$source_root/scripts/monitor.sh"
 printf 'legacy claude rules\n' > "$claude_dir/CLAUDE.md"
 printf 'legacy command\n' > "$claude_dir/commands/legacy.md"
 printf 'legacy codex rules\n' > "$codex_dir/AGENTS.md"
@@ -157,5 +159,58 @@ if PATH="$fake_bin:$PATH" INSTALL_LINK_COUNTER="$link_counter" INSTALL_FAIL_LINK
   fail 'installer accepted an incomplete rollback'
 fi
 grep -q 'rollback was incomplete' "$test_root/rollback-failure.out" || fail 'installer did not report an incomplete rollback'
+
+local_claude_dir="$test_root/local-claude"
+local_codex_dir="$test_root/local-codex"
+"$installer" --local --source "$source_root" --claude-dir "$local_claude_dir" --codex-dir "$local_codex_dir"
+
+assert_link "$local_claude_dir/CLAUDE.md" "$source_root/CLAUDE.md"
+assert_link "$local_codex_dir/AGENTS.md" "$source_root/AGENTS.md"
+
+track_bin="$test_root/track-bin"
+track_root="$(cd -P "$test_root" && pwd -P)/tracked-projects"
+track_claude_dir="$test_root/track-claude"
+track_codex_dir="$test_root/track-codex"
+cron_file="$test_root/crontab"
+mkdir -p "$track_bin"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'if [[ "$1" == "clone" ]]; then' \
+  '  mkdir -p "$3/.git"' \
+  '  exit 0' \
+  'fi' \
+  'if [[ "$1" == "-C" && "$3" == "rev-parse" && "$4" == "--is-inside-work-tree" ]]; then exit 0; fi' \
+  'exit 1' > "$track_bin/git"
+chmod +x "$track_bin/git"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'if [[ "$1" == "-l" ]]; then' \
+  '  if [[ -f "$TEST_CRON_FILE" ]]; then cat "$TEST_CRON_FILE"; else echo "no crontab for test" >&2; exit 1; fi' \
+  'else' \
+  '  cp "$1" "$TEST_CRON_FILE"' \
+  'fi' > "$track_bin/crontab"
+chmod +x "$track_bin/crontab"
+
+TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
+
+assert_link "$track_claude_dir/CLAUDE.md" "$source_root/CLAUDE.md"
+assert_link "$track_codex_dir/AGENTS.md" "$source_root/AGENTS.md"
+[[ -d "$track_root/example-demo/.git" ]] || fail 'track mode did not prepare a local clone'
+if ! grep -F "$source_root/scripts/monitor.sh --repo $track_root/example-demo" "$cron_file" >/dev/null; then
+  sed -n '1,10p' "$cron_file" >&2
+  fail 'track mode did not target the cloned repository'
+fi
+grep -F '# apolo-sdlc-track:example/demo' "$cron_file" >/dev/null || fail 'track mode did not mark its cron entry'
+if rg -q 'claude|curl|aws|gh issue comment|git push|gh pr create' "$cron_file"; then
+  fail 'track mode added a cron entry with a write or external execution path'
+fi
+
+TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
+[[ "$(grep -Fc '# apolo-sdlc-track:example/demo' "$cron_file")" == 1 ]] || fail 'track mode duplicated its cron entry'
+
+if TEST_CRON_FILE="$cron_file" "$installer" --track 'https://github.com/example/demo?token=nope' --source "$source_root" --claude-dir "$test_root/invalid-claude" --codex-dir "$test_root/invalid-codex" --track-root "$test_root/invalid-track" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"; then
+  fail 'track mode accepted an unsafe GitHub URL'
+fi
+[[ ! -e "$test_root/invalid-track" ]] || fail 'invalid track URL created a clone directory'
 
 printf 'PASS: installer behavior\n'

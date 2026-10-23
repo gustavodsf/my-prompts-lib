@@ -17,6 +17,14 @@ if /I "%~1"=="--source" (
   shift
   goto parse
 )
+if /I "%~1"=="--local" (
+  shift
+  goto parse
+)
+if /I "%~1"=="--track" (
+  echo Error: --track is currently supported on macOS/Linux only >&2
+  exit /b 1
+)
 if /I "%~1"=="--claude-dir" (
   if "%~2"=="" goto missing_value
   set "CLAUDE_DIR=%~2"
@@ -211,5 +219,5 @@ if "!ROLLBACK_FAILED!"=="1" exit /b 1
 exit /b 0
 
 :usage
-echo Usage: scripts\install.bat [--source PATH] [--claude-dir PATH] [--codex-dir PATH] [--replace] [--dry-run]
+echo Usage: scripts\install.bat [--local] [--source PATH] [--claude-dir PATH] [--codex-dir PATH] [--replace] [--dry-run]
 exit /b 0

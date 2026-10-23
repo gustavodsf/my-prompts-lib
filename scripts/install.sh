@@ -7,15 +7,26 @@ claude_dir="${HOME}/.claude"
 codex_dir="${HOME}/.codex"
 replace=0
 dry_run=0
+local_mode=0
+track_url=""
+track_root="${XDG_DATA_HOME:-${HOME}/.local/share}/apolo-sdlc/projects"
+git_bin="${GIT_BIN:-git}"
+cron_bin="${CRONTAB_BIN:-crontab}"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/install.sh [options]
+Usage: scripts/install.sh [--local | --track GITHUB_URL] [options]
 
 Options:
+  --local             Link the shared configuration into Claude and Codex.
+  --track GITHUB_URL  Link local configuration, clone the GitHub project, and add a
+                      15-minute read-only monitor cron entry.
   --source PATH       Source clone to link from.
   --claude-dir PATH   Claude configuration directory.
   --codex-dir PATH    Codex configuration directory.
+  --track-root PATH   Directory used for clones and monitor logs with --track.
+  --git-bin PATH      Git executable used to clone with --track.
+  --cron-bin PATH     Crontab executable used to schedule with --track.
   --replace           Back up existing managed targets before linking.
   --dry-run           Print planned actions without changing files.
   --help              Show this help.
@@ -60,11 +71,95 @@ canonicalize_directory() {
   printf '%s%s\n' "$base" "$suffix_path"
 }
 
+validate_github_url() {
+  local url="$1"
+
+  if [[ "$url" =~ ^https://github\.com/([A-Za-z0-9][A-Za-z0-9._-]*)/([A-Za-z0-9][A-Za-z0-9._-]*)(\.git)?$ ]]; then
+    track_owner="${BASH_REMATCH[1]}"
+    track_repository="${BASH_REMATCH[2]}"
+    track_repository="${track_repository%.git}"
+    return 0
+  fi
+
+  fail "track URL must be an HTTPS GitHub repository URL: $url"
+}
+
+quote_for_shell() {
+  printf '%q' "$1"
+}
+
+schedule_tracking() {
+  local repository_dir="$1"
+  local log_dir="$track_root/logs"
+  local log_file="$log_dir/${track_owner}-${track_repository}.log"
+  local marker="# apolo-sdlc-track:${track_owner}/${track_repository}"
+  local cron_file
+  local cron_error
+  local monitor_path="$source_dir/scripts/monitor.sh"
+  local cron_line
+
+  [[ -x "$monitor_path" ]] || fail "monitor is not executable: $monitor_path"
+
+  if [[ "$dry_run" -eq 1 ]]; then
+    printf 'Would add or update 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
+    return 0
+  fi
+
+  mkdir -p "$log_dir" || fail "could not create monitor log directory: $log_dir"
+  cron_file="$(mktemp "${TMPDIR:-/tmp}/apolo-sdlc-cron.XXXXXX")" || fail 'could not create temporary cron file'
+  cron_error="${cron_file}.err"
+  trap 'rm -f -- "$cron_file" "$cron_error"' RETURN
+
+  if ! "$cron_bin" -l >"$cron_file" 2>"$cron_error"; then
+    if ! grep -Eiq 'no crontab' "$cron_error"; then
+      fail "could not read crontab using $cron_bin"
+    fi
+    : >"$cron_file"
+  fi
+
+  cron_line="*/15 * * * * $(quote_for_shell "$monitor_path") --repo $(quote_for_shell "$repository_dir") >> $(quote_for_shell "$log_file") 2>&1 $marker"
+  awk -v marker="$marker" 'index($0, marker) == 0 { print }' "$cron_file" >"${cron_file}.next" || fail 'could not prepare crontab update'
+  printf '%s\n' "$cron_line" >>"${cron_file}.next"
+  mv -- "${cron_file}.next" "$cron_file" || fail 'could not prepare crontab update'
+  "$cron_bin" "$cron_file" || fail "could not install crontab using $cron_bin"
+  trap - RETURN
+  rm -f -- "$cron_file" "$cron_error"
+  printf 'Scheduled 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
+}
+
+prepare_tracking() {
+  local repository_dir="$track_root/${track_owner}-${track_repository}"
+
+  if [[ -e "$repository_dir" || -L "$repository_dir" ]]; then
+    [[ -d "$repository_dir" && ! -L "$repository_dir" ]] || fail "tracked repository path is not a directory: $repository_dir"
+    "$git_bin" -C "$repository_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "tracked repository is not a Git worktree: $repository_dir"
+  elif [[ "$dry_run" -eq 1 ]]; then
+    printf 'Would clone %s to %s\n' "$track_url" "$repository_dir"
+  else
+    mkdir -p "$track_root" || fail "could not create track root: $track_root"
+    "$git_bin" clone "$track_url" "$repository_dir" || fail "could not clone tracked repository: $track_url"
+    printf 'Cloned %s to %s\n' "$track_url" "$repository_dir"
+  fi
+
+  schedule_tracking "$repository_dir"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source)
       require_value "$1" "${2:-}"
       source_dir="$2"
+      shift 2
+      ;;
+    --local)
+      [[ -z "$track_url" ]] || fail '--local cannot be combined with --track'
+      local_mode=1
+      shift
+      ;;
+    --track)
+      require_value "$1" "${2:-}"
+      [[ "$local_mode" -eq 0 && -z "$track_url" ]] || fail '--track cannot be combined with another mode'
+      track_url="$2"
       shift 2
       ;;
     --claude-dir)
@@ -75,6 +170,21 @@ while [[ $# -gt 0 ]]; do
     --codex-dir)
       require_value "$1" "${2:-}"
       codex_dir="$2"
+      shift 2
+      ;;
+    --track-root)
+      require_value "$1" "${2:-}"
+      track_root="$2"
+      shift 2
+      ;;
+    --git-bin)
+      require_value "$1" "${2:-}"
+      git_bin="$2"
+      shift 2
+      ;;
+    --cron-bin)
+      require_value "$1" "${2:-}"
+      cron_bin="$2"
       shift 2
       ;;
     --replace)
@@ -99,6 +209,11 @@ done
 source_dir="$(cd -P "$source_dir" && pwd -P)"
 claude_dir="$(canonicalize_directory "$claude_dir")"
 codex_dir="$(canonicalize_directory "$codex_dir")"
+if [[ -n "$track_url" ]]; then
+  validate_github_url "$track_url"
+  track_root="$(canonicalize_directory "$track_root")"
+  [[ "$track_root" != "/" ]] || fail 'unsafe track root'
+fi
 
 for directory in "$claude_dir" "$codex_dir"; do
   [[ "$directory" != "/" ]] || fail 'unsafe configuration directory'
@@ -137,8 +252,15 @@ declare -a targets=(
   "$codex_dir/skills"
 )
 
-for target in "${targets[@]}"; do
-  [[ ! -L "$target" ]] || fail "refusing to replace existing symbolic link: $target"
+for index in "${!targets[@]}"; do
+  target="${targets[$index]}"
+  source_path="${target_sources[$index]}"
+  if [[ -L "$target" ]]; then
+    if [[ -n "$track_url" && "$(readlink "$target")" == "$source_path" ]]; then
+      continue
+    fi
+    fail "refusing to replace existing symbolic link: $target"
+  fi
   [[ ! -e "$target" || "$replace" -eq 1 ]] || fail "managed target exists; rerun with --replace: $target"
 done
 
@@ -217,6 +339,11 @@ for index in "${!targets[@]}"; do
   target="${targets[$index]}"
   source_path="${target_sources[$index]}"
 
+  if [[ -L "$target" && -n "$track_url" && "$(readlink "$target")" == "$source_path" ]]; then
+    printf 'Reusing shared link %s\n' "$target"
+    continue
+  fi
+
   if [[ -e "$target" ]]; then
     if ! backup_target "$target"; then
       if ! rollback_installation; then
@@ -239,3 +366,7 @@ for index in "${!targets[@]}"; do
     printf 'Linked %s to %s\n' "$target" "$source_path"
   fi
 done
+
+if [[ -n "$track_url" ]]; then
+  prepare_tracking
+fi
