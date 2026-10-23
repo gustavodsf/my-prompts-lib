@@ -511,6 +511,48 @@ printf 'https://github.com/lanes/demo\n' > "$world_writable/.git/origin-url"
 chmod 777 "$world_writable"
 expect_lane_rejection 'a checkout writable by other users' 'writable by other users' https://github.com/lanes/demo --lanes issue --checkout "$world_writable"
 
+new_lane_checkout() {
+  local checkout="$test_root/$1/app"
+  mkdir -p "$checkout/.git/hooks"
+  printf 'https://github.com/lanes/demo\n' > "$checkout/.git/origin-url"
+  chmod 755 "$test_root/$1" "$checkout" "$checkout/.git" "$checkout/.git/hooks"
+  printf '%s\n' "$checkout"
+}
+
+open_hooks="$(new_lane_checkout open-hooks)"
+chmod 777 "$open_hooks/.git/hooks"
+expect_lane_rejection 'writable Git hooks' 'not trusted' https://github.com/lanes/demo --lanes issue --checkout "$open_hooks"
+
+open_hook_file="$(new_lane_checkout open-hook-file)"
+printf '#!/bin/sh\n' > "$open_hook_file/.git/hooks/post-checkout"
+chmod 777 "$open_hook_file/.git/hooks/post-checkout"
+expect_lane_rejection 'a Git hook writable by other users' 'writable by other users' https://github.com/lanes/demo --lanes issue --checkout "$open_hook_file"
+
+open_claude="$(new_lane_checkout open-claude)"
+mkdir -p "$open_claude/.claude"
+chmod 777 "$open_claude/.claude"
+expect_lane_rejection 'writable project Claude settings' 'not trusted' https://github.com/lanes/demo --lanes issue --checkout "$open_claude"
+
+open_parent="$(new_lane_checkout open-parent)"
+chmod 777 "$(dirname "$open_parent")"
+expect_lane_rejection 'a checkout parent writable by other users' 'not trusted' https://github.com/lanes/demo --lanes issue --checkout "$open_parent"
+
+linked_docs="$(new_lane_checkout linked-docs)"
+mkdir -p "$test_root/elsewhere-docs"
+ln -s "$test_root/elsewhere-docs" "$(dirname "$linked_docs")/docs"
+expect_lane_rejection 'a docs directory that is a symbolic link' 'docs' https://github.com/lanes/demo --lanes issue --checkout "$linked_docs"
+
+linked_worktrees="$(new_lane_checkout linked-worktrees)"
+ln -s "$test_root/elsewhere-docs" "$(dirname "$linked_worktrees")/worktrees"
+expect_lane_rejection 'a worktrees directory that is a symbolic link' 'worktrees' https://github.com/lanes/demo --lanes issue --checkout "$linked_worktrees"
+
+shared_tools="$test_root/shared-tools"
+mkdir -p "$shared_tools"
+printf '#!/usr/bin/env bash\n' > "$shared_tools/claude"
+chmod +x "$shared_tools/claude"
+chmod 777 "$shared_tools"
+CLAUDE_BIN="$shared_tools/claude" expect_lane_rejection 'a tool directory writable by other users' 'not trusted' https://github.com/lanes/demo --lanes ci --checkout "$lane_checkout"
+
 : > "$gh_log"
 TRACK_GH_FAIL=1 expect_lane_rejection 'an unresolvable owner' 'owner' https://github.com/lanes/demo --lanes issue --checkout "$lane_checkout"
 expect_lane_rejection 'an unsafe owner' 'owner' https://github.com/lanes/demo --lanes issue --checkout "$lane_checkout" --owner 'bad owner'
@@ -595,6 +637,10 @@ expected_conf="$(printf '%s\n' \
   "gh_bin=$track_bin/gh" \
   "git_bin=$track_bin/git" \
   "codex_bin=$node_install/codex")"
+for directory in worktrees docs; do
+  [[ -d "$lane_parent/$directory" && ! -L "$lane_parent/$directory" ]] || fail "installer did not create the lane $directory directory"
+  assert_private "$lane_parent/$directory" "lane $directory directory"
+done
 [[ "$(cat "$lane_runner_dir/project.conf")" == "$expected_conf" ]] || fail "unexpected lane configuration: $(cat "$lane_runner_dir/project.conf")"
 assert_private "$lane_runner_dir/project.conf" 'lane configuration'
 if find "$lane_claude_dir" "$lane_codex_dir" \( -name 'lane.sh' -o -name 'deny.json' -o -name 'project.conf' -o -lname "*/lanes*" -o -lname '*lane.sh' \) -print | grep -q .; then

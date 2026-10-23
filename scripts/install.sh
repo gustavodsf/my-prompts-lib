@@ -305,10 +305,10 @@ install_lane_files() {
       lane_created_paths+=("$runner_dir/$entry")
     fi
   done
-  for entry in state logs; do
-    if [[ ! -e "$runner_dir/$entry" ]]; then
-      mkdir -m 700 -- "$runner_dir/$entry" || { track_fail "could not create lane directory: $runner_dir/$entry"; return 1; }
-      lane_created_paths+=("$runner_dir/$entry")
+  for entry in "$runner_dir/state" "$runner_dir/logs" "$(dirname "$checkout")/worktrees" "$(dirname "$checkout")/docs"; do
+    if [[ ! -e "$entry" && ! -L "$entry" ]]; then
+      mkdir -m 700 -- "$entry" || { track_fail "could not create lane directory: $entry"; return 1; }
+      lane_created_paths+=("$entry")
     fi
   done
 
@@ -475,15 +475,17 @@ build_lane_tools() {
   lane_codex_bin="$(resolve_tool_path codex "${CODEX_BIN:-codex}")" || lane_codex_bin=""
   [[ "$lanes" != *issue* || -n "$lane_codex_bin" ]] || fail "codex is required by the issue lane but was not found: ${CODEX_BIN:-codex}"
 
-  for tool_path in "$lane_claude_bin" "$lane_gh_bin" "$lane_git_bin" "$lane_codex_bin"; do
-    [[ -z "$tool_path" ]] || { validate_cron_path "$tool_path"; directories+=("$(dirname "$tool_path")"); }
-  done
   # npm-installed CLIs such as codex start with `env node`, so the lanes also need node's directory.
-  if tool_path="$(resolve_tool_path node "${NODE_BIN:-node}")"; then
+  tool_path="$(resolve_tool_path node "${NODE_BIN:-node}")" || tool_path=""
+  for tool_path in "$lane_claude_bin" "$lane_gh_bin" "$lane_git_bin" "$lane_codex_bin" "$tool_path"; do
+    [[ -n "$tool_path" ]] || continue
+    validate_cron_path "$tool_path"
+    has_trusted_path "$(dirname "$tool_path")" || fail "tool directory is not trusted (writable by other users): $(dirname "$tool_path")"
     directories+=("$(dirname "$tool_path")")
-  fi
+  done
   lane_path=""
   for directory in "${directories[@]}" /usr/local/bin /usr/bin /bin; do
+    has_trusted_path "$(cd -P "$directory" 2>/dev/null && pwd -P)" || continue
     [[ ":$lane_path:" == *":$directory:"* ]] || lane_path="${lane_path:+$lane_path:}$directory"
   done
   validate_cron_path "$lane_path"
@@ -518,6 +520,51 @@ prepare_tracking() {
   schedule_tracking "$repository_dir"
 }
 
+# Lanes run code from these directories unattended. Group write is accepted only for a user-private group
+# (named after the user), which grants nothing to anyone else; sticky shared directories such as /tmp are accepted.
+is_trusted_dir() {
+  local directory="$1"
+
+  [[ -d "$directory" && ! -L "$directory" ]] || return 1
+  [[ -O "$directory" || -n "$(find "$directory" -prune -user 0 -print)" ]] || return 1
+  [[ -z "$(find "$directory" -prune -perm -0002 ! -perm -1000 -print)" ]] || return 1
+  if [[ -n "$(find "$directory" -prune -perm -0020 ! -perm -1000 -print)" ]]; then
+    [[ "$(id -gn)" == "$(id -un)" && -n "$(find "$directory" -prune -group "$(id -g)" -print)" ]] || return 1
+  fi
+}
+
+has_trusted_path() {
+  local directory="$1"
+
+  while true; do
+    is_trusted_dir "$directory" || return 1
+    [[ "$directory" != "/" ]] || return 0
+    directory="$(dirname "$directory")"
+  done
+}
+
+validate_checkout_trust() {
+  local project_dir
+  local directory
+  local name
+
+  has_trusted_path "$checkout" || fail "checkout or one of its parent directories is not trusted: $checkout"
+  for directory in "$checkout/.git" "$checkout/.git/hooks" "$checkout/.claude"; do
+    [[ -e "$directory" || -L "$directory" ]] || continue
+    is_trusted_dir "$directory" || fail "directory the lanes execute from is not trusted: $directory"
+  done
+  for directory in "$checkout/.git/hooks" "$checkout/.claude"; do
+    [[ -d "$directory" ]] || continue
+    [[ -z "$(find "$directory" -perm -0002 ! -type l -print)" ]] || fail "$directory contains files writable by other users"
+  done
+  project_dir="$(dirname "$checkout")"
+  for name in worktrees docs; do
+    directory="$project_dir/$name"
+    [[ -e "$directory" || -L "$directory" ]] || continue
+    is_trusted_dir "$directory" || fail "lane $name directory must be a trusted, non-linked directory: $directory"
+  done
+}
+
 validate_lane_options() {
   local source_file
 
@@ -541,6 +588,7 @@ validate_lane_options() {
   verify_tracking_origin "$checkout" || fail "checkout origin does not match requested URL: $checkout"
   validate_cron_path "$checkout"
   validate_cron_path "$(dirname "$checkout")"
+  validate_checkout_trust
   for source_file in scripts/lane.sh lanes/issue.md lanes/ci.md lanes/deny.json; do
     [[ -f "$source_dir/$source_file" ]] || fail "lane source file is missing: $source_dir/$source_file"
   done
