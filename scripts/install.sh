@@ -13,6 +13,11 @@ track_root="${XDG_DATA_HOME:-${HOME}/.local/share}/apolo-sdlc/projects"
 runner_root="${XDG_DATA_HOME:-${HOME}/.local/share}/apolo-sdlc/runners"
 git_bin="${GIT_BIN:-git}"
 cron_bin="${CRONTAB_BIN:-crontab}"
+gh_bin="${GH_BIN:-gh}"
+lanes=""
+lane_names=()
+checkout=""
+owner=""
 track_error=""
 track_created_repository=""
 track_created_dirs=()
@@ -34,7 +39,13 @@ Options:
   --track-root PATH   Directory used for tracked clones with --track.
   --git-bin PATH      Git executable used to clone with --track.
   --cron-bin PATH     Crontab executable used to schedule with --track.
-  --replace           Back up existing managed targets before linking.
+  --lanes LIST        With --track, also schedule autonomous lanes: issue, ci, or issue,ci.
+                      They run Claude unattended and write to GitHub.
+  --checkout PATH     Existing project checkout the lanes work in (required with --lanes).
+  --owner LOGIN       GitHub login whose issues and comments the lanes obey
+                      (default: the login reported by gh).
+  --gh-bin PATH       GitHub CLI executable used to resolve the owner.
+  --replace          Back up existing managed targets before linking.
   --dry-run           Print planned actions without changing files.
   --help              Show this help.
 EOF
@@ -253,10 +264,18 @@ schedule_tracking() {
   local error_log="$runner_root/${track_owner}/${track_repository}/last-error.log"
   local work_dir
   local cron_line
+  local lane
 
   if [[ "$dry_run" -eq 1 ]]; then
     printf 'Would install managed monitor runner at %s\n' "$runner_path"
     printf 'Would add or update 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
+    if [[ -n "$lanes" ]]; then
+      printf 'Would install lane runner at %s/lane.sh\n' "$(dirname "$runner_path")"
+      printf 'Would write lane configuration %s/project.conf for owner %s and checkout %s\n' "$(dirname "$runner_path")" "$owner" "$checkout"
+      for lane in "${lane_names[@]}"; do
+        printf 'Would schedule %s lane for %s/%s\n' "$lane" "$track_owner" "$track_repository"
+      done
+    fi
     return 0
   fi
 
@@ -304,6 +323,34 @@ prepare_tracking() {
   schedule_tracking "$repository_dir"
 }
 
+validate_lane_options() {
+  if [[ -z "$lanes" ]]; then
+    [[ -z "$checkout" ]] || fail '--checkout requires --lanes'
+    [[ -z "$owner" ]] || fail '--owner requires --lanes'
+    return 0
+  fi
+
+  [[ "$lanes" =~ ^(issue|ci)(,(issue|ci))?$ ]] || fail "unknown lane list (use issue, ci or issue,ci): $lanes"
+  IFS=',' read -r -a lane_names <<< "$lanes"
+  [[ "${#lane_names[@]}" -eq 1 || "${lane_names[0]}" != "${lane_names[1]}" ]] || fail "repeated lane: ${lane_names[0]}"
+
+  [[ -n "$checkout" ]] || fail '--lanes requires --checkout'
+  [[ -d "$checkout" && ! -L "$checkout" ]] || fail "checkout is not a directory: $checkout"
+  checkout="$(cd -P "$checkout" && pwd -P)"
+  [[ -O "$checkout" ]] || fail "checkout must be owned by the current user: $checkout"
+  # Group write is accepted for user-private groups; only other users must be excluded.
+  [[ -z "$(find "$checkout" -prune -perm -0002 -print)" ]] || fail "checkout is writable by other users: $checkout"
+  "$git_bin" -C "$checkout" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "checkout is not a Git worktree: $checkout"
+  verify_tracking_origin "$checkout" || fail "checkout origin does not match requested URL: $checkout"
+  validate_cron_path "$checkout"
+  validate_cron_path "$(dirname "$checkout")"
+
+  if [[ -z "$owner" ]]; then
+    owner="$("$gh_bin" api user --jq .login 2>/dev/null)" || fail 'could not resolve the GitHub owner with gh; pass --owner'
+  fi
+  [[ "$owner" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] || fail "unsafe GitHub owner: $owner"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source)
@@ -347,6 +394,26 @@ while [[ $# -gt 0 ]]; do
       cron_bin="$2"
       shift 2
       ;;
+    --lanes)
+      require_value "$1" "${2:-}"
+      lanes="$2"
+      shift 2
+      ;;
+    --checkout)
+      require_value "$1" "${2:-}"
+      checkout="$2"
+      shift 2
+      ;;
+    --owner)
+      require_value "$1" "${2:-}"
+      owner="$2"
+      shift 2
+      ;;
+    --gh-bin)
+      require_value "$1" "${2:-}"
+      gh_bin="$2"
+      shift 2
+      ;;
     --replace)
       replace=1
       shift
@@ -365,6 +432,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+[[ -z "$lanes" || -n "$track_url" ]] || fail '--lanes requires --track'
 [[ -d "$source_dir" ]] || fail "source directory does not exist: $source_dir"
 source_dir="$(cd -P "$source_dir" && pwd -P)"
 claude_dir="$(canonicalize_directory "$claude_dir")"
@@ -377,6 +445,7 @@ if [[ -n "$track_url" ]]; then
   [[ "$runner_root" != "/" ]] || fail 'unsafe runner root'
   validate_cron_path "$track_root/${track_owner}/${track_repository}"
   validate_cron_path "$runner_root/${track_owner}/${track_repository}/last-error.log"
+  validate_lane_options
 fi
 
 for directory in "$claude_dir" "$codex_dir"; do

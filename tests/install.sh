@@ -202,7 +202,7 @@ printf '%s\n' \
   '  printf "%s\\n" "${TRACK_CLONE_ORIGIN:-$track_url}" > "$repository_dir/.git/origin-url"' \
   '  exit 0' \
   'fi' \
-  'if [[ "$1" == "-C" && "$3" == "rev-parse" && "$4" == "--is-inside-work-tree" ]]; then exit 0; fi' \
+  'if [[ "$1" == "-C" && "$3" == "rev-parse" && "$4" == "--is-inside-work-tree" ]]; then [[ -d "$2/.git" ]]; exit; fi' \
   'if [[ "$1" == "-C" && "$3" == "config" && "$4" == "--get" && "$5" == "remote.origin.url" ]]; then cat "$2/.git/origin-url"; exit 0; fi' \
   'if [[ "$1" == "-C" && "$3" == "remote" && "$4" == "get-url" && "$5" == "origin" ]]; then' \
   '  if [[ "${TRACK_INSTEADOF:-0}" == "1" ]]; then sed "s|^https://github.com/|ssh://git@example.invalid/|" "$2/.git/origin-url"; else cat "$2/.git/origin-url"; fi' \
@@ -414,5 +414,104 @@ if TRACK_CLONE_HOOK="$sticky_share/late" XDG_DATA_HOME="$sticky_share/late/data"
   fail 'track mode installed a runner under a directory created by another user during the run'
 fi
 [[ "$(grep -Fc '# apolo-sdlc-track:late/demo' "$cron_file")" == 0 ]] || fail 'late shared directory changed the crontab'
+
+gh_log="$test_root/gh.log"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "gh %s\\n" "$*" >> "$TRACK_GH_LOG"' \
+  '[[ "${TRACK_GH_FAIL:-0}" != "1" ]] || exit 1' \
+  'if [[ "$1 $2" == "api user" ]]; then printf "%s\\n" "${TRACK_GH_LOGIN:-lane-owner}"; exit 0; fi' \
+  'exit 1' > "$track_bin/gh"
+chmod +x "$track_bin/gh"
+
+lane_checkout="$test_root/lane-project/app"
+mkdir -p "$lane_checkout/.git"
+printf 'https://github.com/lanes/demo\n' > "$lane_checkout/.git/origin-url"
+chmod 775 "$lane_checkout"
+lane_checkout="$(cd -P "$lane_checkout" && pwd -P)"
+
+lane_attempt=0
+run_lanes() {
+  lane_attempt=$((lane_attempt + 1))
+  lane_claude_dir="$test_root/lane-claude-$lane_attempt"
+  lane_codex_dir="$test_root/lane-codex-$lane_attempt"
+  lane_track_root="$test_root/lane-tracks-$lane_attempt"
+  TRACK_GH_LOG="$gh_log" run_track "$@" --claude-dir "$lane_claude_dir" --codex-dir "$lane_codex_dir" \
+    --track-root "$lane_track_root" --gh-bin "$track_bin/gh"
+}
+
+expect_lane_rejection() {
+  local description="$1" expected_message="$2"
+  shift 2
+  if run_lanes "$@" > "$test_root/lane.out" 2> "$test_root/lane.err"; then
+    fail "installer accepted $description"
+  fi
+  grep -qi -- "$expected_message" "$test_root/lane.err" || fail "installer did not explain $description: $(cat "$test_root/lane.err")"
+  [[ ! -e "$lane_claude_dir" && ! -e "$lane_codex_dir" && ! -e "$lane_track_root" ]] || fail "$description changed local state"
+  [[ "$(grep -Fc 'lanes/demo' "$cron_file")" == 0 ]] || fail "$description changed the crontab"
+}
+
+for mode in '' --local; do
+  if TRACK_GH_LOG="$gh_log" "$installer" ${mode:+"$mode"} --lanes issue --source "$source_root" \
+    --claude-dir "$test_root/local-lane-claude" --codex-dir "$test_root/local-lane-codex" 2> "$test_root/lane.err"; then
+    fail "installer accepted lanes outside track mode (${mode:-no mode})"
+  fi
+  grep -qF 'requires --track' "$test_root/lane.err" || fail "installer did not explain lanes outside track mode: $(cat "$test_root/lane.err")"
+  [[ ! -e "$test_root/local-lane-claude" ]] || fail 'lanes outside track mode changed local state'
+done
+expect_lane_rejection 'an unknown lane' 'unknown lane' https://github.com/lanes/demo --lanes issue,deploy --checkout "$lane_checkout"
+expect_lane_rejection 'an empty lane list' 'missing value' https://github.com/lanes/demo --lanes '' --checkout "$lane_checkout"
+expect_lane_rejection 'a trailing comma' 'unknown lane' https://github.com/lanes/demo --lanes issue, --checkout "$lane_checkout"
+expect_lane_rejection 'a repeated lane' 'repeated lane' https://github.com/lanes/demo --lanes ci,ci --checkout "$lane_checkout"
+expect_lane_rejection 'lanes without a checkout' 'requires --checkout' https://github.com/lanes/demo --lanes issue
+expect_lane_rejection 'a checkout without lanes' 'requires --lanes' https://github.com/lanes/demo --checkout "$lane_checkout"
+expect_lane_rejection 'a missing checkout' 'checkout' https://github.com/lanes/demo --lanes issue --checkout "$test_root/absent-checkout"
+
+not_git="$test_root/not-git"
+mkdir -p "$not_git"
+expect_lane_rejection 'a checkout that is not a Git worktree' 'git worktree' https://github.com/lanes/demo --lanes issue --checkout "$not_git"
+
+other_origin="$test_root/other-origin"
+mkdir -p "$other_origin/.git"
+printf 'https://github.com/lanes/other\n' > "$other_origin/.git/origin-url"
+expect_lane_rejection 'a checkout with another origin' 'does not match' https://github.com/lanes/demo --lanes issue --checkout "$other_origin"
+
+world_writable="$test_root/world-writable"
+mkdir -p "$world_writable/.git"
+printf 'https://github.com/lanes/demo\n' > "$world_writable/.git/origin-url"
+chmod 777 "$world_writable"
+expect_lane_rejection 'a checkout writable by other users' 'writable by other users' https://github.com/lanes/demo --lanes issue --checkout "$world_writable"
+
+: > "$gh_log"
+TRACK_GH_FAIL=1 expect_lane_rejection 'an unresolvable owner' 'owner' https://github.com/lanes/demo --lanes issue --checkout "$lane_checkout"
+expect_lane_rejection 'an unsafe owner' 'owner' https://github.com/lanes/demo --lanes issue --checkout "$lane_checkout" --owner 'bad owner'
+
+: > "$gh_log"
+run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" --dry-run > "$test_root/lane-dry.out" \
+  || fail 'installer rejected a valid lane dry run'
+grep -q '^gh api user' "$gh_log" || fail 'installer did not resolve the owner with gh'
+lane_runner_dir="$runner_root/lanes/demo"
+for expected in \
+  "Would install lane runner at $lane_runner_dir/lane.sh" \
+  "Would write lane configuration $lane_runner_dir/project.conf for owner lane-owner and checkout $lane_checkout" \
+  'Would schedule issue lane for lanes/demo' \
+  'Would schedule ci lane for lanes/demo'; do
+  grep -qxF -- "$expected" "$test_root/lane-dry.out" || fail "lane dry run did not print: $expected"
+done
+[[ ! -e "$lane_claude_dir" && ! -e "$lane_track_root" && ! -e "$lane_runner_dir" ]] || fail 'lane dry run changed local state'
+[[ "$(grep -Fc 'lanes/demo' "$cron_file")" == 0 ]] || fail 'lane dry run changed the crontab'
+
+: > "$gh_log"
+run_lanes https://github.com/lanes/demo --lanes ci --checkout "$lane_checkout" --owner explicit-owner --dry-run > "$test_root/lane-dry.out" \
+  || fail 'installer rejected an explicit owner'
+[[ ! -s "$gh_log" ]] || fail 'installer called gh despite an explicit owner'
+grep -qF 'for owner explicit-owner' "$test_root/lane-dry.out" || fail 'installer ignored the explicit owner'
+if grep -qF 'issue lane' "$test_root/lane-dry.out"; then
+  fail 'installer planned a lane that was not requested'
+fi
+
+: > "$gh_log"
+run_track https://github.com/nolanes/demo --gh-bin "$track_bin/gh" --dry-run > /dev/null || fail 'installer rejected track mode without lanes'
+[[ ! -s "$gh_log" ]] || fail 'installer called gh without lanes'
 
 printf 'PASS: installer behavior\n'
