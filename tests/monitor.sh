@@ -90,6 +90,7 @@ PATH="$fake_bin:$PATH" MONITOR_LOG="$log_file" "$monitor" --repo "$repo_a" --sta
 
 grep -q '^claude ' "$log_file" || fail 'authorized monitor did not invoke Claude'
 grep -q '#42' "$log_file" || fail 'monitor did not pass the authorized issue to Claude'
+grep -F "$repo_root/scripts/github-write.sh" "$log_file" >/dev/null || fail 'monitor did not delegate external writes to the constrained wrapper'
 grep -qx 'status=completed' "$state_file" || fail 'monitor did not complete the authorized issue after Claude succeeded'
 if grep -Eq '^gh (issue list|pr list)' "$log_file"; then
   fail 'authorized monitor performed unnecessary broad polling'

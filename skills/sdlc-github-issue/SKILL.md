@@ -17,4 +17,6 @@ For an authorized issue:
 
 Persist the authorization and issue number so a monitor restart cannot advance another issue. Keep generated task Markdown under `project-doc/<issue-number>/` and out of commits.
 
+When invoked by the POSIX monitor, direct GitHub writes and `git push` are unavailable. Use only the supplied `github-write.sh` wrapper for a concise sanitized issue comment, pushing the branch, or creating the PR; it is bound to the authorized repository and issue. Do not use `curl` or AWS. The Windows monitor fails closed for external writes until its wrapper contract is validated.
+
 AWS is allowed only when necessary for the authorized issue and only through read-only inspection. Never create, update, delete, or mutate AWS resources. Sanitize AWS-derived evidence before writing a GitHub comment.

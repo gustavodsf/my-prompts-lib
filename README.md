@@ -31,7 +31,7 @@ Windows symbolic links require Developer Mode or an elevated Command Prompt. Do 
 
 ## Authorized GitHub monitor
 
-The monitor reads open GitHub issues and pull requests by default. It starts Claude only for the one issue persisted by an explicit authorization. The shell monitor never writes to GitHub or AWS directly.
+The monitor reads open GitHub issues and pull requests when no issue is authorized. It starts Claude only for the one explicitly authorized issue, bound to the repository root and `origin` remote. It records `authorized` and `completed` states, so a successful run is not started again.
 
 After a human has said `vamos trabalhar <issue-number>`, persist that authorization from the clone:
 
@@ -55,9 +55,9 @@ Only one issue may be authorized at a time. Clear it before authorizing another 
 ./scripts/monitor.sh --clear-authorization
 ```
 
-The authorization state is local: `~/.local/state/apolo-sdlc/authorized-issue` on macOS/Linux and `%LOCALAPPDATA%\apolo-sdlc\authorized-issue` on Windows. The monitor blocks concurrent runs for the same authorization.
+The authorization state is local: `~/.local/state/apolo-sdlc/` on macOS/Linux and `%LOCALAPPDATA%\apolo-sdlc\authorized-issue` on Windows. It is bound to the repository and remote; the monitor blocks concurrent runs and recovers locks left by a stopped process after the configured TTL.
 
-When an authorized issue runs, Claude uses `dontAsk` with a fixed allowlist for repository work, GitHub issue/PR actions, common test commands, and `curl` API validation. `bypassPermissions` is not used. The delegated workflow may inspect AWS only when necessary and only read-only; AWS writes are prohibited.
+When an authorized issue runs, Claude uses `dontAsk` with a fixed allowlist for repository work and tests. It has no direct `curl`, AWS, `git push`, or GitHub-write permission. On macOS/Linux, a constrained wrapper can only comment on the authorized issue, push a branch containing its number, or create a PR for that branch in the bound repository. Windows remains fail-closed for external writes until the same wrapper contract is executed and validated there. `bypassPermissions` is not used.
 
 ## Scheduling
 

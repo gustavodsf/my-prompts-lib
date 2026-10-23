@@ -237,7 +237,14 @@ fi
 
 command -v "$claude_bin" >/dev/null || fail "Claude CLI is required: $claude_bin"
 acquire_lock || exit 0
-prompt="Run the authorized GitHub issue lifecycle for issue #${state_issue} in this repository. Follow the installed sdlc-github-issue skill. Work only on this issue; do not advance another issue. Direct external writes and AWS access are unavailable in automatic mode."
+wrapper_bin="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/github-write.sh"
+[[ -x "$wrapper_bin" ]] || fail "authorized GitHub wrapper is required: $wrapper_bin"
+allowed_tools="$allowed_tools,Bash($wrapper_bin *)"
+export APOLO_AUTHORIZATION_STATE="$state_file"
+export APOLO_AUTHORIZED_REPO="$repo_dir"
+export APOLO_AUTHORIZED_REMOTE="$repo_remote"
+export APOLO_AUTHORIZED_ISSUE="$state_issue"
+prompt="Run the authorized GitHub issue lifecycle for issue #${state_issue} in this repository. Follow the installed sdlc-github-issue skill. Work only on this issue; do not advance another issue. Direct external writes and AWS access are unavailable. To post a sanitized progress comment, push the issue branch, or create the pull request, invoke only $wrapper_bin with comment, push, or create-pr."
 (
   cd "$repo_dir"
   "$claude_bin" -p --permission-mode dontAsk --allowedTools "$allowed_tools" "$prompt"
