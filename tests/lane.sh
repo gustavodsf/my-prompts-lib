@@ -187,7 +187,7 @@ executed="$(new_runner executed)"
 CLAUDE_BIN="$recording_claude" write_valid_conf "$executed"
 run_recorded "$executed" issue > "$test_root/out" || fail 'lane failed with a valid configuration'
 
-expected_args="$(printf '%s\n' -p --dangerously-skip-permissions --settings "$executed/lanes/deny.json")"
+expected_args="$(printf '%s\n' -p --dangerously-skip-permissions --settings "$executed/lanes/deny.json" --max-turns 150)"
 [[ "$(cat "$record/args")" == "$expected_args" ]] || fail "lane passed unexpected Claude arguments: $(cat "$record/args")"
 [[ "$(cat "$record/lane")" == 'issue' ]] || fail 'lane did not export APOLO_SDLC_LANE'
 [[ "$(cat "$record/cwd")" == "$(cd "$checkout" && pwd -P)" ]] || fail 'lane did not run Claude in the checkout'
@@ -229,12 +229,54 @@ rm -f "$record/args"
 run_recorded "$executed" ci > "$test_root/out" 2>&1 || fail 'lane failed while another lane held the lock'
 [[ ! -e "$record/args" ]] || fail 'lane ran Claude while another lane held the lock'
 [[ ! -s "$test_root/out" ]] || fail 'lane was not silent while the lock was held'
+grep -qE "ci lane skipped: lock held by pid $holder" "$executed/logs/ci.log" || fail 'lane did not log that it skipped for a held lock'
 kill "$holder"
 wait "$holder" 2>/dev/null || true
 
 run_recorded "$executed" ci || fail 'lane did not recover a stale lock'
 [[ -e "$record/args" ]] || fail 'lane skipped Claude after the lock holder exited'
 [[ ! -e "$executed/lanes.lock" ]] || fail 'lane did not release the recovered lock'
+
+configured="$(new_runner configured)"
+CLAUDE_BIN="$recording_claude" write_valid_conf "$configured"
+printf 'max_turns=7\n' >> "$configured/project.conf"
+run_recorded "$configured" ci || fail 'lane rejected a configured turn limit'
+grep -qx -- '7' <(sed -n '/^--max-turns$/{n;p;}' "$record/args") || fail "lane ignored the configured turn limit: $(cat "$record/args")"
+for bad in 'timeout_seconds=soon' 'timeout_seconds=0' 'max_turns=-1'; do
+  invalid="$(new_runner "invalid-${bad%%=*}-${bad#*=}")"
+  write_valid_conf "$invalid"
+  printf '%s\n' "$bad" >> "$invalid/project.conf"
+  expect_rejection "an invalid limit ($bad)" "${bad%%=*}" "$invalid" ci
+done
+
+hanging_claude="$fake_bin/hanging-claude"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'cat > /dev/null' \
+  'sleep 60 &' \
+  'printf "%s\n" "$!" > "$CLAUDE_RECORD/grandchild"' \
+  'wait' > "$hanging_claude"
+chmod +x "$hanging_claude"
+hanging="$(new_runner hanging)"
+CLAUDE_BIN="$hanging_claude" write_valid_conf "$hanging"
+printf 'timeout_seconds=1\n' >> "$hanging/project.conf"
+started="$(date +%s)"
+if CLAUDE_RECORD="$record" run_lane "$hanging" ci; then
+  fail 'lane reported success for a run that hit its time limit'
+else
+  hung_status=$?
+fi
+elapsed=$(( $(date +%s) - started ))
+[[ "$hung_status" -eq 124 ]] || fail "lane did not report the time limit with status 124: $hung_status"
+[[ "$elapsed" -lt 20 ]] || fail "lane waited ${elapsed}s for a run that exceeded its 1s limit"
+grep -q 'ci lane timed out after 1s' "$hanging/logs/ci.log" || fail 'lane did not log the time limit'
+grandchild="$(cat "$record/grandchild")"
+sleep 1
+if kill -0 "$grandchild" 2>/dev/null; then
+  kill "$grandchild"
+  fail 'lane left a process from the timed-out run running'
+fi
+[[ ! -e "$hanging/lanes.lock" ]] || fail 'lane kept its lock after a timeout'
 
 lanes_dir="$repo_root/lanes"
 deny_rules="$lanes_dir/deny.json"

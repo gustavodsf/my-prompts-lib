@@ -6,7 +6,7 @@ runner_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 config_file="$runner_dir/project.conf"
 prompt_keys=(repo owner checkout worktrees docs state evidence_branch)
 required_keys=("${prompt_keys[@]}" claude_bin gh_bin git_bin)
-optional_keys=(codex_bin)
+optional_keys=(codex_bin timeout_seconds max_turns)
 seen_keys=" "
 
 usage() {
@@ -50,6 +50,10 @@ read_config() {
   for key in "${required_keys[@]}"; do
     [[ "$seen_keys" == *" $key "* ]] || fail "project.conf is missing $key"
   done
+  conf_timeout_seconds="${conf_timeout_seconds:-3600}"
+  conf_max_turns="${conf_max_turns:-150}"
+  [[ "$conf_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || fail "timeout_seconds must be a positive integer: $conf_timeout_seconds"
+  [[ "$conf_max_turns" =~ ^[1-9][0-9]*$ ]] || fail "max_turns must be a positive integer: $conf_max_turns"
 }
 
 require_tool() {
@@ -79,6 +83,40 @@ acquire_lock() {
   chmod 700 "$lock_dir"
 }
 
+timestamp() {
+  date '+%Y-%m-%dT%H:%M:%S%z'
+}
+
+# Job control gives Claude its own process group, so a timeout also stops the tools it started.
+run_with_limit() {
+  local limit="$1"
+  local child
+  local watchdog
+  local status=0
+  local expired="$lock_dir/expired"
+  shift
+
+  set -m
+  "$@" &
+  child=$!
+  (sleep "$limit"; : > "$expired"; kill -TERM -- "-$child" 2>/dev/null; sleep 10; kill -KILL -- "-$child" 2>/dev/null) &
+  watchdog=$!
+  set +m
+  wait "$child" || status=$?
+  kill -TERM -- "-$watchdog" 2>/dev/null || true
+  wait "$watchdog" 2>/dev/null || true
+  if [[ -e "$expired" ]]; then
+    printf '=== %s %s lane timed out after %ss ===\n' "$(timestamp)" "$lane" "$limit"
+    return 124
+  fi
+  return "$status"
+}
+
+run_claude() {
+  cd "$conf_checkout" && APOLO_SDLC_LANE="$lane" exec "$conf_claude_bin" -p --dangerously-skip-permissions \
+    --settings "$deny_file" --max-turns "$conf_max_turns" < "$prompt_copy"
+}
+
 build_prompt() {
   local key value
 
@@ -105,16 +143,19 @@ log_dir="$runner_dir/logs"
 [[ -f "$deny_file" ]] || fail "deny rules are missing: $deny_file"
 [[ -d "$conf_checkout" ]] || fail "checkout is not a directory: $conf_checkout"
 
-acquire_lock || exit 0
-
 mkdir -p "$log_dir"
 chmod 700 "$log_dir"
+if ! acquire_lock; then
+  printf '=== %s %s lane skipped: lock held by pid %s ===\n' "$(timestamp)" "$lane" "$(cat "$lock_dir/pid" 2>/dev/null || printf unknown)" >> "$log_dir/$lane.log"
+  exit 0
+fi
+
 prompt_copy="$lock_dir/prompt"
 build_prompt > "$prompt_copy"
 status=0
 {
-  printf '=== %s %s lane start ===\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$lane"
-  (cd "$conf_checkout" && APOLO_SDLC_LANE="$lane" "$conf_claude_bin" -p --dangerously-skip-permissions --settings "$deny_file" < "$prompt_copy") || status=$?
-  printf '=== %s %s lane exit %s ===\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$lane" "$status"
+  printf '=== %s %s lane start ===\n' "$(timestamp)" "$lane"
+  run_with_limit "$conf_timeout_seconds" run_claude || status=$?
+  printf '=== %s %s lane exit %s ===\n' "$(timestamp)" "$lane" "$status"
 } >> "$log_dir/$lane.log" 2>&1
 exit "$status"
