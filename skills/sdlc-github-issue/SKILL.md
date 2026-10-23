@@ -1,11 +1,11 @@
 ---
 name: sdlc-github-issue
-description: Monitor GitHub issues and pull requests, then execute the complete lifecycle only for an explicitly authorized issue. Use for scheduled issue/PR automation or when the user says vamos trabalhar followed by an issue number.
+description: Monitor GitHub issues and pull requests without writes, then guide the interactive lifecycle only for an explicitly authorized issue. Use for scheduled tracking or when the user says vamos trabalhar followed by an issue number.
 ---
 
 # Authorized GitHub issue lifecycle
 
-Monitor issues and pull requests without writing by default. Multiple candidate issues may exist. Start external work only after explicit `vamos trabalhar <issue-number>` authorization has been recorded in durable local state.
+Monitor issues and pull requests without writing by default. Multiple candidate issues may exist. Scheduled runs stay read-only even after authorization; start interactive work only after explicit `vamos trabalhar <issue-number>` authorization has been recorded in durable local state.
 
 For an authorized issue:
 
@@ -17,6 +17,4 @@ For an authorized issue:
 
 Persist the authorization and issue number so a monitor restart cannot advance another issue. Keep generated task Markdown under `project-doc/<issue-number>/` and out of commits.
 
-When invoked by the POSIX monitor, direct GitHub writes and `git push` are unavailable. Use only the supplied `github-write.sh` wrapper for a concise sanitized issue comment, pushing the branch, or creating the PR; it is bound to the authorized repository and issue. Do not use `curl` or AWS. The Windows monitor fails closed for external writes until its wrapper contract is validated.
-
-AWS is allowed only when necessary for the authorized issue and only through read-only inspection. Never create, update, delete, or mutate AWS resources. Sanitize AWS-derived evidence before writing a GitHub comment.
+The scheduled monitor never invokes Claude, `curl`, AWS, GitHub writes, `git push`, or a write wrapper. Run API evidence in a visible terminal and make GitHub writes only during the separately approved interactive workflow. Never create, update, delete, or mutate AWS resources.

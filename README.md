@@ -31,12 +31,12 @@ Windows symbolic links require Developer Mode or an elevated Command Prompt. Do 
 
 ## Authorized GitHub monitor
 
-The monitor reads open GitHub issues and pull requests when no issue is authorized. It starts Claude only for the one explicitly authorized issue, bound to the repository root and `origin` remote. It records `authorized` and `completed` states, so a successful run is not started again.
+The monitor reads open GitHub issues and pull requests when no issue is authorized. An explicit authorization is bound to the repository root and `origin` remote, but scheduled runs remain read-only: they never start Claude, write to GitHub, push, or create a pull request.
 
 After a human has said `vamos trabalhar <issue-number>`, persist that authorization from the clone:
 
 ```bash
-./scripts/monitor.sh --authorize 123
+./scripts/monitor.sh --repo /absolute/path/to/project --authorize 123
 ./scripts/monitor.sh --repo /absolute/path/to/project --dry-run
 ./scripts/monitor.sh --repo /absolute/path/to/project
 ```
@@ -44,7 +44,7 @@ After a human has said `vamos trabalhar <issue-number>`, persist that authorizat
 The Windows equivalent is:
 
 ```bat
-scripts\monitor.bat --authorize 123
+scripts\monitor.bat --repo C:\absolute\path\to\project --authorize 123
 scripts\monitor.bat --repo C:\absolute\path\to\project --dry-run
 scripts\monitor.bat --repo C:\absolute\path\to\project
 ```
@@ -55,9 +55,9 @@ Only one issue may be authorized at a time. Clear it before authorizing another 
 ./scripts/monitor.sh --clear-authorization
 ```
 
-The authorization state is local: `~/.local/state/apolo-sdlc/` on macOS/Linux and `%LOCALAPPDATA%\apolo-sdlc\authorized-issue` on Windows. It is bound to the repository and remote; the monitor blocks concurrent runs and recovers locks left by a stopped process after the configured TTL.
+The authorization state is local: `~/.local/state/apolo-sdlc/` on macOS/Linux and `%LOCALAPPDATA%\apolo-sdlc\authorized-issue` on Windows. It is bound to the repository and remote. A closed issue is marked completed; an open authorized issue remains ready for interactive execution.
 
-When an authorized issue runs, Claude uses `dontAsk` with a fixed allowlist for repository work and tests. It has no direct `curl`, AWS, `git push`, or GitHub-write permission. On macOS/Linux, a constrained wrapper can only comment on the authorized issue, push a branch containing its number, or create a PR for that branch in the bound repository. Windows remains fail-closed for external writes until the same wrapper contract is executed and validated there. `bypassPermissions` is not used.
+Use an explicit interactive session for code changes, HTTP evidence, GitHub comments, pushes, and pull requests. The scheduled monitor has no Claude executor, wrapper, AWS access, `curl`, or GitHub-write path.
 
 ## Scheduling
 
@@ -67,12 +67,12 @@ Create schedules yourself; the installer does not register cron jobs or Windows 
 */15 * * * * /absolute/path/to/my-prompts-lib/scripts/monitor.sh --repo /absolute/path/to/project >> /absolute/path/to/logs/apolo-sdlc-monitor.log 2>&1
 ```
 
-For Windows Task Scheduler, create an action that starts `scripts\monitor.bat` every 15 minutes and pass `--repo C:\absolute\path\to\project` as its arguments. The scheduled user must have an authenticated `gh` CLI and a working Claude CLI.
+For Windows Task Scheduler, create an action that starts `scripts\monitor.bat` every 15 minutes and pass `--repo C:\absolute\path\to\project` as its arguments. The scheduled user needs an authenticated `gh` CLI; Claude is not invoked by the schedule.
 
 ## Workflow guarantees
 
 - Guided ClickUp/Jira work keeps the human at approval gates and never accesses AWS.
-- GitHub automation begins only after the persisted authorization, keeps task artifacts local, and comments only with concise sanitized progress.
+- GitHub tracking begins only after the persisted authorization and remains read-only when scheduled. Interactive work keeps task artifacts local and requires human approval before external writes.
 - API validation uses visible terminal HTTP evidence. UI/E2E validation uses a visible browser and sanitized screenshots or console/network evidence.
 - Claude work is reviewed in Codex and Codex work in Claude, with independent correctness, performance, security, and duplication review areas.
 

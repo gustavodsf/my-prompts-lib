@@ -219,7 +219,9 @@ for index in "${!targets[@]}"; do
 
   if [[ -e "$target" ]]; then
     if ! backup_target "$target"; then
-      rollback_installation || true
+      if ! rollback_installation; then
+        fail "could not back up managed target and rollback was incomplete: $target"
+      fi
       fail "could not back up managed target: $target"
     fi
   fi
@@ -228,7 +230,9 @@ for index in "${!targets[@]}"; do
     printf 'Would link %s to %s\n' "$target" "$source_path"
   else
     if ! ln -s "$source_path" "$target"; then
-      rollback_installation || true
+      if ! rollback_installation; then
+        fail "could not link managed target and rollback was incomplete: $target"
+      fi
       fail "could not link managed target: $target"
     fi
     created_targets+=("$target")

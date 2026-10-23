@@ -3,11 +3,8 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 set "REPO=%CD%"
 set "STATE_FILE=%LOCALAPPDATA%\apolo-sdlc\authorized-issue"
-set "CLAUDE_BIN=claude"
-set "ALLOWED_TOOLS=Read,Glob,Grep,Edit,Write,Bash(git status *),Bash(git diff *),Bash(git branch *),Bash(git switch *),Bash(git add *),Bash(git commit *),Bash(git fetch *),Bash(git merge --ff-only *),Bash(git log *),Bash(git show *),Bash(git rev-parse *),Bash(git remote *),Bash(git ls-files *),Bash(gh issue list *),Bash(gh issue view *),Bash(gh pr list *),Bash(gh pr view *),Bash(gh pr checks *),Bash(npm *),Bash(pnpm *),Bash(yarn *),Bash(bun *),Bash(mvn *),Bash(gradle *),Bash(dotnet *),Bash(go *),Bash(pytest *)"
 set "LIMIT=30"
 set "MAX_LIMIT=50"
-set "LOCK_TTL=3600"
 set "DRY_RUN=0"
 set "AUTHORIZE_ISSUE="
 set "CLEAR_AUTHORIZATION=0"
@@ -45,23 +42,9 @@ if /I "%~1"=="--state-file" (
   shift
   goto parse
 )
-if /I "%~1"=="--claude-bin" (
-  if "%~2"=="" goto missing_value
-  set "CLAUDE_BIN=%~2"
-  shift
-  shift
-  goto parse
-)
 if /I "%~1"=="--limit" (
   if "%~2"=="" goto missing_value
   set "LIMIT=%~2"
-  shift
-  shift
-  goto parse
-)
-if /I "%~1"=="--lock-ttl" (
-  if "%~2"=="" goto missing_value
-  set "LOCK_TTL=%~2"
   shift
   shift
   goto parse
@@ -84,8 +67,6 @@ if not "!AUTHORIZE_ISSUE!"=="" if "!CLEAR_AUTHORIZATION!"=="1" goto incompatible
 set "APOLO_NUMBER=!LIMIT!"
 powershell -NoProfile -Command "if ($env:APOLO_NUMBER -notmatch '^[1-9][0-9]*$') { exit 1 }" || goto invalid_limit
 if !LIMIT! GTR !MAX_LIMIT! goto invalid_limit
-set "APOLO_NUMBER=!LOCK_TTL!"
-powershell -NoProfile -Command "if ($env:APOLO_NUMBER -notmatch '^[1-9][0-9]*$') { exit 1 }" || goto invalid_lock_ttl
 if not "!AUTHORIZE_ISSUE!"=="" (
   set "APOLO_NUMBER=!AUTHORIZE_ISSUE!"
   powershell -NoProfile -Command "if ($env:APOLO_NUMBER -notmatch '^[1-9][0-9]*$') { exit 1 }" || goto invalid_issue
@@ -171,35 +152,10 @@ if /I not "!ISSUE_STATE!"=="OPEN" (
   exit /b 0
 )
 if "!DRY_RUN!"=="1" (
-  echo Would invoke Claude for authorized issue #!STATE_ISSUE! in !REPO!
+  echo Authorized issue #!STATE_ISSUE! is ready for interactive execution in !REPO!
   exit /b 0
 )
-
-where "!CLAUDE_BIN!" >nul 2>&1 || (
-  echo Error: Claude CLI is required: !CLAUDE_BIN! >&2
-  exit /b 1
-)
-set "LOCK_DIR=!STATE_FILE!.lock"
-if exist "!LOCK_DIR!" call :recover_lock || (
-  echo Authorized issue #!STATE_ISSUE! is already running.
-  exit /b 0
-)
-mkdir "!LOCK_DIR!" >nul 2>&1 || exit /b 1
-for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "$PID"`) do set "LOCK_PID=%%I"
-for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()"`) do set "LOCK_STARTED=%%I"
-> "!LOCK_DIR!\owner" echo !LOCK_PID! !LOCK_STARTED!
-pushd "!REPO!" || (
-  rmdir "!LOCK_DIR!" >nul 2>&1
-  exit /b 1
-)
-"!CLAUDE_BIN!" -p --permission-mode dontAsk --allowedTools "!ALLOWED_TOOLS!" "Run the authorized GitHub issue lifecycle for issue #!STATE_ISSUE! in this repository. Follow the installed sdlc-github-issue skill. Work only on this issue; do not advance another issue. Direct external writes and AWS access are unavailable in automatic mode."
-set "RESULT=!ERRORLEVEL!"
-popd
-del "!LOCK_DIR!\owner" >nul 2>&1
-rmdir "!LOCK_DIR!" >nul 2>&1
-if not "!RESULT!"=="0" exit /b !RESULT!
-call :write_state "!STATE_ISSUE!" completed || exit /b 1
-echo Authorized issue #!STATE_ISSUE! completed.
+echo Authorized issue #!STATE_ISSUE! is tracked and requires interactive execution.
 exit /b 0
 
 :invalid_issue
@@ -208,10 +164,6 @@ exit /b 1
 
 :invalid_limit
 echo Error: limit must be an integer from 1 to 50 >&2
-exit /b 1
-
-:invalid_lock_ttl
-echo Error: lock TTL must be a positive integer >&2
 exit /b 1
 
 :incompatible_flags
@@ -258,13 +210,6 @@ if not "!STATE_REPO!"=="!REPO!" exit /b 1
 if not "!STATE_REMOTE!"=="!REPO_REMOTE!" exit /b 1
 exit /b 0
 
-:recover_lock
-fsutil reparsepoint query "!LOCK_DIR!" >nul 2>&1 && exit /b 1
-set "APOLO_LOCK_DIR=!LOCK_DIR!"
-set "APOLO_LOCK_TTL=!LOCK_TTL!"
-powershell -NoProfile -Command "$owner=Get-Content -LiteralPath (Join-Path $env:APOLO_LOCK_DIR 'owner') -ErrorAction SilentlyContinue; $parts=$owner -split ' '; $stale=$parts.Count -ne 2 -or -not ($parts[0] -as [int]) -or -not ($parts[1] -as [long]) -or ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()-[long]$parts[1] -gt [long]$env:APOLO_LOCK_TTL); $alive=if($stale){$false}else{Get-Process -Id ([int]$parts[0]) -ErrorAction SilentlyContinue}; if($stale -or -not $alive){Remove-Item -LiteralPath $env:APOLO_LOCK_DIR -Force; exit 0}; exit 1"
-exit /b !ERRORLEVEL!
-
 :usage
-echo Usage: scripts\monitor.bat [--authorize ISSUE] [--clear-authorization] [--repo PATH] [--state-file PATH] [--claude-bin PATH] [--limit NUMBER] [--dry-run]
+echo Usage: scripts\monitor.bat [--authorize ISSUE] [--clear-authorization] [--repo PATH] [--state-file PATH] [--limit NUMBER] [--dry-run]
 exit /b 0

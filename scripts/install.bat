@@ -87,6 +87,10 @@ exit /b 0
 
 :rollback
 call :rollback_installation
+if errorlevel 1 (
+  echo Error: installation failed and rollback was incomplete >&2
+  exit /b 2
+)
 echo Error: installation failed and was rolled back >&2
 exit /b 1
 
@@ -186,18 +190,24 @@ echo Linked %~2 to %~1
 exit /b 0
 
 :rollback_installation
+set "ROLLBACK_FAILED=0"
 for /l %%I in (%STEP%,-1,1) do (
   if defined CREATED_%%I (
     if "!KIND_%%I!"=="dir" (
-      rmdir "!TARGET_%%I!" >nul 2>&1
+      rmdir "!TARGET_%%I!" >nul 2>&1 || set "ROLLBACK_FAILED=1"
     ) else (
-      del "!TARGET_%%I!" >nul 2>&1
+      del "!TARGET_%%I!" >nul 2>&1 || set "ROLLBACK_FAILED=1"
     )
   )
   if defined BACKUP_%%I (
-    if not exist "!TARGET_%%I!" move "!BACKUP_%%I!" "!TARGET_%%I!" >nul
+    if not exist "!TARGET_%%I!" (
+      move "!BACKUP_%%I!" "!TARGET_%%I!" >nul || set "ROLLBACK_FAILED=1"
+    ) else (
+      set "ROLLBACK_FAILED=1"
+    )
   )
 )
+if "!ROLLBACK_FAILED!"=="1" exit /b 1
 exit /b 0
 
 :usage

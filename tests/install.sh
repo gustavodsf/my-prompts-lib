@@ -130,6 +130,12 @@ printf '%s\n' \
   'exec /bin/ln "$@"' > "$fake_bin/ln"
 chmod +x "$fake_bin/ln"
 
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  '[[ "${INSTALL_FAIL_REMOVE:-0}" != "1" ]] || exit 1' \
+  'exec /bin/rm "$@"' > "$fake_bin/rm"
+chmod +x "$fake_bin/rm"
+
 if PATH="$fake_bin:$PATH" INSTALL_LINK_COUNTER="$link_counter" INSTALL_FAIL_LINK_AT=5 "$installer" --source "$source_root" --claude-dir "$transaction_claude_dir" --codex-dir "$transaction_codex_dir" --replace; then
   fail 'installer did not fail when link creation failed mid-transaction'
 fi
@@ -145,5 +151,11 @@ assert_file_content "$transaction_codex_dir/skills/legacy.md" 'legacy transactio
 if find "$transaction_claude_dir" "$transaction_codex_dir" -maxdepth 1 -name '*-old-*' -print -quit | grep -q .; then
   fail 'installer left backup artifacts after rollback'
 fi
+
+: > "$link_counter"
+if PATH="$fake_bin:$PATH" INSTALL_LINK_COUNTER="$link_counter" INSTALL_FAIL_LINK_AT=5 INSTALL_FAIL_REMOVE=1 "$installer" --source "$source_root" --claude-dir "$transaction_claude_dir" --codex-dir "$transaction_codex_dir" --replace > "$test_root/rollback-failure.out" 2>&1; then
+  fail 'installer accepted an incomplete rollback'
+fi
+grep -q 'rollback was incomplete' "$test_root/rollback-failure.out" || fail 'installer did not report an incomplete rollback'
 
 printf 'PASS: installer behavior\n'
