@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 monitor="$repo_root/scripts/monitor.sh"
+monitor_batch="$repo_root/scripts/monitor.bat"
 test_root="$(mktemp -d)"
 trap 'rm -rf "$test_root"' EXIT
 
@@ -13,6 +14,7 @@ fail() {
 }
 
 [[ -x "$monitor" ]] || fail "expected executable monitor: $monitor"
+[[ -f "$monitor_batch" ]] || fail "expected Windows monitor: $monitor_batch"
 
 fake_bin="$test_root/bin"
 state_file="$test_root/authorized-issue"
@@ -107,5 +109,13 @@ fi
 
 PATH="$fake_bin:$PATH" MONITOR_LOG="$log_file" "$monitor" --repo "$repo_a" --clear-authorization --state-file "$state_file"
 [[ ! -e "$state_file" ]] || fail 'monitor did not clear the authorization state'
+
+if rg -F 'Bash(curl *)' "$monitor_batch" >/dev/null || rg -F 'Bash(git push *)' "$monitor_batch" >/dev/null || rg -F 'Bash(gh issue comment *)' "$monitor_batch" >/dev/null || rg -F 'Bash(gh pr create *)' "$monitor_batch" >/dev/null; then
+  fail 'Windows monitor retained direct external-write or curl permissions'
+fi
+rg -F 'authorize and clear cannot be used together' "$monitor_batch" >/dev/null || fail 'Windows monitor does not reject incompatible authorization flags'
+rg -F 'limit must be an integer from 1 to 50' "$monitor_batch" >/dev/null || fail 'Windows monitor does not cap polling'
+rg -F 'call :read_state' "$monitor_batch" >/dev/null || fail 'Windows monitor does not validate structured authorization state'
+rg -F ':recover_lock' "$monitor_batch" >/dev/null || fail 'Windows monitor does not recover stale locks'
 
 printf 'PASS: monitor behavior\n'
