@@ -438,12 +438,30 @@ chmod 775 "$lane_checkout"
 lane_checkout="$(cd -P "$lane_checkout" && pwd -P)"
 
 lane_attempt=0
+lane_tools="$test_root/lane-tools"
+codex_install="$test_root/node-versions/v1/bin"
+mkdir -p "$lane_tools" "$codex_install"
+printf '#!/usr/bin/env bash\n' > "$lane_tools/claude"
+printf '#!/usr/bin/env bash\n' > "$codex_install/codex"
+chmod +x "$lane_tools/claude" "$codex_install/codex"
+ln -s "$codex_install/codex" "$lane_tools/codex"
+node_install="$test_root/node-versions/v1/installation/bin"
+mkdir -p "$node_install"
+printf '#!/usr/bin/env bash\n' > "$node_install/node"
+chmod +x "$node_install/node"
+ln -s "$node_install/node" "$lane_tools/node"
+lane_tools="$(cd -P "$lane_tools" && pwd -P)"
+codex_install="$(cd -P "$codex_install" && pwd -P)"
+node_install="$(cd -P "$node_install" && pwd -P)"
+
 run_lanes() {
   lane_attempt=$((lane_attempt + 1))
   lane_claude_dir="$test_root/lane-claude-$lane_attempt"
   lane_codex_dir="$test_root/lane-codex-$lane_attempt"
   lane_track_root="$test_root/lane-tracks-$lane_attempt"
-  TRACK_GH_LOG="$gh_log" run_track "$@" --claude-dir "$lane_claude_dir" --codex-dir "$lane_codex_dir" \
+  TRACK_GH_LOG="$gh_log" CLAUDE_BIN="${CLAUDE_BIN:-$lane_tools/claude}" CODEX_BIN="${CODEX_BIN:-$lane_tools/codex}" \
+    NODE_BIN="${NODE_BIN:-$lane_tools/node}" \
+    run_track "$@" --claude-dir "$lane_claude_dir" --codex-dir "$lane_codex_dir" \
     --track-root "$lane_track_root" --gh-bin "$track_bin/gh"
 }
 
@@ -594,5 +612,69 @@ grep -qF 'lane source' "$test_root/lane.err" || fail "installer did not explain 
 [[ "$(cat "$cron_file")" == "$cron_before_missing_source" ]] || fail 'missing lane source changed the crontab'
 assert_lane_files v2
 mv "$source_root/lanes/ci.md.hidden" "$source_root/lanes/ci.md"
+
+issue_marker='# apolo-sdlc-lane:issue:lanes/demo'
+ci_marker='# apolo-sdlc-lane:ci:lanes/demo'
+monitor_marker='# apolo-sdlc-track:lanes/demo'
+count_marker() {
+  awk -v marker="$1" 'substr($0, length($0) - length(marker) + 1) == marker' "$cron_file" | wc -l | tr -d ' '
+}
+lane_line() {
+  awk -v marker="$1" 'substr($0, length($0) - length(marker) + 1) == marker' "$cron_file"
+}
+
+printf '0 3 * * * /usr/bin/backup\n' >> "$cron_file"
+printf '*/15 * * * * /x/lane.sh issue # apolo-sdlc-lane:issue:other/proj\n' >> "$cron_file"
+printf '*/15 * * * * /x/lane.sh issue # apolo-sdlc-lane:issue:lanes/demo-extra\n' >> "$cron_file"
+
+run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" > /dev/null || fail 'installer failed to schedule lanes'
+[[ "$(count_marker "$issue_marker")" == 1 && "$(count_marker "$ci_marker")" == 1 ]] || fail 'installer did not schedule each lane once'
+[[ "$(count_marker "$monitor_marker")" == 1 ]] || fail 'scheduling lanes changed the monitor entry'
+issue_line="$(lane_line "$issue_marker")"
+ci_line="$(lane_line "$ci_marker")"
+[[ "$issue_line" == '0-59/15 * * * * '* ]] || fail "issue lane has an unexpected schedule: $issue_line"
+[[ "$ci_line" == '7-59/15 * * * * '* ]] || fail "ci lane has an unexpected schedule: $ci_line"
+[[ "$issue_line" == *" $lane_runner_dir/lane.sh issue >/dev/null 2> $lane_runner_dir/logs/issue-last-error.log $issue_marker" ]] \
+  || fail "issue lane does not run the managed runner: $issue_line"
+[[ "$ci_line" == *" $lane_runner_dir/lane.sh ci >/dev/null 2> $lane_runner_dir/logs/ci-last-error.log $ci_marker" ]] \
+  || fail "ci lane does not run the managed runner: $ci_line"
+lane_path="$(printf '%s\n' "$issue_line" | sed -n 's/^.* PATH=\([^ ]*\) .*$/\1/p')"
+for directory in "$lane_tools" "$codex_install" "$node_install" /usr/bin /bin; do
+  [[ ":$lane_path:" == *":$directory:"* ]] || fail "lane PATH does not include $directory: $lane_path"
+done
+grep -qxF '0 3 * * * /usr/bin/backup' "$cron_file" || fail 'scheduling lanes removed an unrelated entry'
+[[ "$(count_marker '# apolo-sdlc-lane:issue:other/proj')" == 1 ]] || fail 'scheduling lanes removed another project lane'
+[[ "$(count_marker '# apolo-sdlc-lane:issue:lanes/demo-extra')" == 1 ]] || fail 'scheduling lanes removed a prefix project lane'
+if grep -F "$source_root" "$cron_file" | grep -q 'lane'; then
+  fail 'installer scheduled the mutable source lane runner'
+fi
+
+run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" > /dev/null || fail 'installer failed to reschedule lanes'
+[[ "$(count_marker "$issue_marker")" == 1 && "$(count_marker "$ci_marker")" == 1 ]] || fail 'rescheduling duplicated lane entries'
+
+run_lanes https://github.com/lanes/demo --lanes issue --checkout "$lane_checkout" > /dev/null || fail 'installer failed to narrow lanes'
+[[ "$(count_marker "$issue_marker")" == 1 ]] || fail 'narrowing lanes removed the issue lane'
+[[ "$(count_marker "$ci_marker")" == 0 ]] || fail 'narrowing lanes kept the ci lane'
+
+run_lanes https://github.com/lanes/demo > /dev/null || fail 'installer failed to disable lanes'
+[[ "$(count_marker "$issue_marker")" == 0 && "$(count_marker "$ci_marker")" == 0 ]] || fail 'reinstalling without lanes kept lane entries'
+[[ "$(count_marker "$monitor_marker")" == 1 ]] || fail 'disabling lanes removed the monitor entry'
+grep -qxF '0 3 * * * /usr/bin/backup' "$cron_file" || fail 'disabling lanes removed an unrelated entry'
+[[ "$(count_marker '# apolo-sdlc-lane:issue:other/proj')" == 1 ]] || fail 'disabling lanes removed another project lane'
+
+cron_before_missing_tool="$(cat "$cron_file")"
+if CLAUDE_BIN="$test_root/absent/claude" run_lanes https://github.com/lanes/demo --lanes ci --checkout "$lane_checkout" 2> "$test_root/lane.err"; then
+  fail 'installer scheduled lanes without claude'
+fi
+grep -qF 'claude' "$test_root/lane.err" || fail "installer did not explain the missing claude: $(cat "$test_root/lane.err")"
+if CODEX_BIN="$test_root/absent/codex" run_lanes https://github.com/lanes/demo --lanes issue --checkout "$lane_checkout" 2> "$test_root/lane.err"; then
+  fail 'installer scheduled the issue lane without codex'
+fi
+grep -qF 'codex' "$test_root/lane.err" || fail "installer did not explain the missing codex: $(cat "$test_root/lane.err")"
+CODEX_BIN="$test_root/absent/codex" run_lanes https://github.com/lanes/demo --lanes ci --checkout "$lane_checkout" > /dev/null \
+  || fail 'installer required codex for the ci lane'
+[[ "$(count_marker "$ci_marker")" == 1 ]] || fail 'ci lane was not scheduled without codex'
+[[ "$(grep -vF -e "$ci_marker" -e "$monitor_marker" "$cron_file" | sort)" == "$(printf '%s\n' "$cron_before_missing_tool" | grep -vF "$monitor_marker" | sort)" ]] \
+  || fail 'rejected lane installs changed unrelated crontab entries'
 
 printf 'PASS: installer behavior\n'

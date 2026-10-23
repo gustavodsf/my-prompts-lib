@@ -20,6 +20,7 @@ checkout=""
 owner=""
 lane_backup_dir=""
 lane_created_paths=()
+lane_path=""
 track_error=""
 track_created_repository=""
 track_created_dirs=()
@@ -337,15 +338,22 @@ rollback_lane_files() {
 write_crontab() {
   local work_dir="$1"
   local marker="$2"
-  local cron_line="$3"
+  shift 2
 
   if ! "$cron_bin" -l >"$work_dir/current" 2>"$work_dir/error"; then
     grep -Eiq 'no crontab' "$work_dir/error" || { track_fail "could not read crontab using $cron_bin"; return 1; }
     : >"$work_dir/current"
   fi
-  awk -v marker="$marker" '{ start = length($0) - length(marker) + 1 } start < 1 || substr($0, start) != marker { print }' \
-    "$work_dir/current" >"$work_dir/next" || { track_fail 'could not prepare crontab update'; return 1; }
-  printf '%s\n' "$cron_line" >>"$work_dir/next" || { track_fail 'could not prepare crontab update'; return 1; }
+  awk -v markers="$marker" '
+    BEGIN { count = split(markers, list, "\n") }
+    {
+      for (i = 1; i <= count; i++) {
+        start = length($0) - length(list[i]) + 1
+        if (start >= 1 && substr($0, start) == list[i]) next
+      }
+      print
+    }' "$work_dir/current" >"$work_dir/next" || { track_fail 'could not prepare crontab update'; return 1; }
+  printf '%s\n' "$@" >>"$work_dir/next" || { track_fail 'could not prepare crontab update'; return 1; }
   "$cron_bin" "$work_dir/next" || { track_fail "could not install crontab using $cron_bin"; return 1; }
 }
 
@@ -355,8 +363,9 @@ schedule_tracking() {
   local runner_path="$runner_root/${track_owner}/${track_repository}/monitor.sh"
   local error_log="$runner_root/${track_owner}/${track_repository}/last-error.log"
   local work_dir
-  local cron_line
+  local markers
   local lane
+  local -a cron_lines
 
   if [[ "$dry_run" -eq 1 ]]; then
     printf 'Would install managed monitor runner at %s\n' "$runner_path"
@@ -377,9 +386,16 @@ schedule_tracking() {
   fi
 
   # Stdout is discarded; stderr is truncated each run so only the latest failure is kept.
-  cron_line="*/15 * * * * $(quote_for_shell "$runner_path") --scheduled --repo $(quote_for_shell "$repository_dir") >/dev/null 2> $(quote_for_shell "$error_log") $marker"
+  cron_lines=("*/15 * * * * $(quote_for_shell "$runner_path") --scheduled --repo $(quote_for_shell "$repository_dir") >/dev/null 2> $(quote_for_shell "$error_log") $marker")
+  markers="$marker"
+  for lane in issue ci; do
+    markers+=$'\n'"# apolo-sdlc-lane:${lane}:${track_owner}/${track_repository}"
+  done
+  for lane in ${lane_names[@]+"${lane_names[@]}"}; do
+    cron_lines+=("$(lane_cron_line "$(dirname "$runner_path")" "$lane")")
+  done
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/apolo-sdlc-cron.XXXXXX")" || { track_fail 'could not create temporary cron directory'; return 1; }
-  if ! write_crontab "$work_dir" "$marker" "$cron_line"; then
+  if ! write_crontab "$work_dir" "$markers" "${cron_lines[@]}"; then
     rm -rf -- "$work_dir"
     return 1
   fi
@@ -390,6 +406,56 @@ schedule_tracking() {
   lane_backup_dir=""
   lane_created_paths=()
   printf 'Scheduled 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
+  for lane in ${lane_names[@]+"${lane_names[@]}"}; do
+    printf 'Scheduled %s lane for %s/%s\n' "$lane" "$track_owner" "$track_repository"
+  done
+}
+
+# The issue lane starts on the quarter hour and the ci lane 7 minutes later, so they rarely contend for the lock.
+lane_cron_line() {
+  local runner_dir="$1"
+  local lane="$2"
+  local minutes='0-59/15'
+
+  [[ "$lane" == 'issue' ]] || minutes='7-59/15'
+  printf '%s * * * * PATH=%s %s %s >/dev/null 2> %s # apolo-sdlc-lane:%s:%s/%s\n' \
+    "$minutes" "$(quote_for_shell "$lane_path")" "$(quote_for_shell "$runner_dir/lane.sh")" "$lane" \
+    "$(quote_for_shell "$runner_dir/logs/$lane-last-error.log")" "$lane" "$track_owner" "$track_repository"
+}
+
+# Cron has a minimal PATH, and version managers expose tools through per-shell links, so record each tool's real directory.
+resolve_tool_dir() {
+  local path
+  local target
+
+  path="$(command -v "$2" 2>/dev/null)" && [[ -x "$path" ]] || fail "$1 is required by the lanes but was not found: $2"
+  while [[ -L "$path" ]]; do
+    target="$(readlink "$path")"
+    [[ "$target" = /* ]] || target="$(dirname "$path")/$target"
+    path="$target"
+  done
+  (cd -P "$(dirname "$path")" && pwd -P)
+}
+
+build_lane_path() {
+  local directory
+  local -a directories=()
+
+  directories+=("$(resolve_tool_dir claude "${CLAUDE_BIN:-claude}")")
+  directories+=("$(resolve_tool_dir gh "$gh_bin")")
+  directories+=("$(resolve_tool_dir git "$git_bin")")
+  if [[ "$lanes" == *issue* ]]; then
+    directories+=("$(resolve_tool_dir codex "${CODEX_BIN:-codex}")")
+  fi
+  # npm-installed CLIs such as codex start with `env node`, and node lives outside their package directory.
+  if command -v "${NODE_BIN:-node}" >/dev/null 2>&1; then
+    directories+=("$(resolve_tool_dir node "${NODE_BIN:-node}")")
+  fi
+  lane_path=""
+  for directory in "${directories[@]}" /usr/local/bin /usr/bin /bin; do
+    [[ ":$lane_path:" == *":$directory:"* ]] || lane_path="${lane_path:+$lane_path:}$directory"
+  done
+  validate_cron_path "$lane_path"
 }
 
 prepare_tracking() {
@@ -452,6 +518,7 @@ validate_lane_options() {
     owner="$("$gh_bin" api user --jq .login 2>/dev/null)" || fail 'could not resolve the GitHub owner with gh; pass --owner'
   fi
   [[ "$owner" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] || fail "unsafe GitHub owner: $owner"
+  build_lane_path
 }
 
 while [[ $# -gt 0 ]]; do
