@@ -176,6 +176,7 @@ mkdir -p "$track_bin"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'if [[ "$1" == "clone" ]]; then' \
+  '  [[ "${TRACK_FAIL_CLONE:-0}" != "1" ]] || exit 1' \
   '  mkdir -p "$3/.git"' \
   '  printf "%s\\n" "$2" > "$3/.git/origin-url"' \
   '  exit 0' \
@@ -192,6 +193,13 @@ printf '%s\n' \
   '  cp "$1" "$TEST_CRON_FILE"' \
   'fi' > "$track_bin/crontab"
 chmod +x "$track_bin/crontab"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'if [[ "$1" == "-l" ]]; then' \
+  '  if [[ -f "$TEST_CRON_FILE" ]]; then cat "$TEST_CRON_FILE"; exit 0; else echo "no crontab for test" >&2; exit 1; fi' \
+  'fi' \
+  'exit 1' > "$track_bin/failing-crontab"
+chmod +x "$track_bin/failing-crontab"
 
 TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
 
@@ -227,5 +235,23 @@ if TEST_CRON_FILE="$cron_file" "$installer" --track 'https://github.com/example/
   fail 'track mode accepted an unsafe GitHub URL'
 fi
 [[ ! -e "$test_root/invalid-track" ]] || fail 'invalid track URL created a clone directory'
+
+clone_failure_claude_dir="$test_root/clone-failure-claude"
+clone_failure_codex_dir="$test_root/clone-failure-codex"
+clone_failure_track_root="$test_root/clone-failure-tracks"
+if TRACK_FAIL_CLONE=1 TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/failure/clone --source "$source_root" --claude-dir "$clone_failure_claude_dir" --codex-dir "$clone_failure_codex_dir" --track-root "$clone_failure_track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"; then
+  fail 'track mode accepted a clone failure'
+fi
+[[ ! -e "$clone_failure_claude_dir" && ! -e "$clone_failure_codex_dir" ]] || fail 'clone failure left local configuration changes'
+[[ ! -e "$clone_failure_track_root" ]] || fail 'clone failure left a tracking directory'
+
+cron_failure_claude_dir="$test_root/cron-failure-claude"
+cron_failure_codex_dir="$test_root/cron-failure-codex"
+cron_failure_track_root="$test_root/cron-failure-tracks"
+if TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/failure/cron --source "$source_root" --claude-dir "$cron_failure_claude_dir" --codex-dir "$cron_failure_codex_dir" --track-root "$cron_failure_track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/failing-crontab"; then
+  fail 'track mode accepted a crontab failure'
+fi
+[[ ! -e "$cron_failure_claude_dir" && ! -e "$cron_failure_codex_dir" ]] || fail 'crontab failure left local configuration changes'
+[[ ! -e "$cron_failure_track_root" ]] || fail 'crontab failure left a tracking directory'
 
 printf 'PASS: installer behavior\n'

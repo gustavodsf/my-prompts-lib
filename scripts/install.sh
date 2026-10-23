@@ -12,6 +12,11 @@ track_url=""
 track_root="${XDG_DATA_HOME:-${HOME}/.local/share}/apolo-sdlc/projects"
 git_bin="${GIT_BIN:-git}"
 cron_bin="${CRONTAB_BIN:-crontab}"
+track_error=""
+track_created_repository=""
+track_created_owner_dir=""
+track_created_root=""
+track_created_log_dir=""
 
 usage() {
   cat <<'EOF'
@@ -36,6 +41,11 @@ EOF
 fail() {
   printf 'Error: %s\n' "$1" >&2
   exit 1
+}
+
+track_fail() {
+  track_error="$1"
+  return 1
 }
 
 require_value() {
@@ -106,9 +116,9 @@ verify_tracking_origin() {
   local normalized_remote
   local expected_remote="https://github.com/${track_owner}/${track_repository}"
 
-  remote_url="$("$git_bin" -C "$repository_dir" remote get-url origin)" || fail "tracked repository has no origin remote: $repository_dir"
-  normalized_remote="$(normalize_github_remote "$remote_url")" || fail "tracked repository origin is not a GitHub repository: $repository_dir"
-  [[ "$normalized_remote" == "$expected_remote" ]] || fail "tracked repository origin does not match requested URL: $repository_dir"
+  remote_url="$("$git_bin" -C "$repository_dir" remote get-url origin)" || { track_fail "tracked repository has no origin remote: $repository_dir"; return 1; }
+  normalized_remote="$(normalize_github_remote "$remote_url")" || { track_fail "tracked repository origin is not a GitHub repository: $repository_dir"; return 1; }
+  [[ "$normalized_remote" == "$expected_remote" ]] || { track_fail "tracked repository origin does not match requested URL: $repository_dir"; return 1; }
 }
 
 quote_for_shell() {
@@ -125,49 +135,73 @@ schedule_tracking() {
   local monitor_path="$source_dir/scripts/monitor.sh"
   local cron_line
 
-  [[ -x "$monitor_path" ]] || fail "monitor is not executable: $monitor_path"
+  [[ -x "$monitor_path" ]] || { track_fail "monitor is not executable: $monitor_path"; return 1; }
 
   if [[ "$dry_run" -eq 1 ]]; then
     printf 'Would add or update 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
     return 0
   fi
 
-  mkdir -p "$log_dir" || fail "could not create monitor log directory: $log_dir"
-  cron_file="$(mktemp "${TMPDIR:-/tmp}/apolo-sdlc-cron.XXXXXX")" || fail 'could not create temporary cron file'
+  if [[ ! -e "$log_dir" ]]; then
+    mkdir -p "$log_dir" || { track_fail "could not create monitor log directory: $log_dir"; return 1; }
+    track_created_log_dir="$log_dir"
+  fi
+  cron_file="$(mktemp "${TMPDIR:-/tmp}/apolo-sdlc-cron.XXXXXX")" || { track_fail 'could not create temporary cron file'; return 1; }
   cron_error="${cron_file}.err"
-  trap 'rm -f -- "$cron_file" "$cron_error"' RETURN
 
   if ! "$cron_bin" -l >"$cron_file" 2>"$cron_error"; then
     if ! grep -Eiq 'no crontab' "$cron_error"; then
-      fail "could not read crontab using $cron_bin"
+      rm -f -- "$cron_file" "$cron_error"
+      track_fail "could not read crontab using $cron_bin"
+      return 1
     fi
     : >"$cron_file"
   fi
 
   cron_line="*/15 * * * * $(quote_for_shell "$monitor_path") --repo $(quote_for_shell "$repository_dir") >> $(quote_for_shell "$log_file") 2>&1 $marker"
-  awk -v marker="$marker" 'index($0, marker) == 0 { print }' "$cron_file" >"${cron_file}.next" || fail 'could not prepare crontab update'
+  if ! awk -v marker="$marker" 'index($0, marker) == 0 { print }' "$cron_file" >"${cron_file}.next"; then
+    rm -f -- "$cron_file" "$cron_error" "${cron_file}.next"
+    track_fail 'could not prepare crontab update'
+    return 1
+  fi
   printf '%s\n' "$cron_line" >>"${cron_file}.next"
-  mv -- "${cron_file}.next" "$cron_file" || fail 'could not prepare crontab update'
-  "$cron_bin" "$cron_file" || fail "could not install crontab using $cron_bin"
-  trap - RETURN
+  if ! mv -- "${cron_file}.next" "$cron_file"; then
+    rm -f -- "$cron_file" "$cron_error" "${cron_file}.next"
+    track_fail 'could not prepare crontab update'
+    return 1
+  fi
+  if ! "$cron_bin" "$cron_file"; then
+    rm -f -- "$cron_file" "$cron_error"
+    track_fail "could not install crontab using $cron_bin"
+    return 1
+  fi
   rm -f -- "$cron_file" "$cron_error"
   printf 'Scheduled 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
 }
 
 prepare_tracking() {
   local repository_dir="$track_root/${track_owner}/${track_repository}"
+  local owner_dir="$track_root/${track_owner}"
 
   if [[ -e "$repository_dir" || -L "$repository_dir" ]]; then
-    [[ -d "$repository_dir" && ! -L "$repository_dir" ]] || fail "tracked repository path is not a directory: $repository_dir"
-    "$git_bin" -C "$repository_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "tracked repository is not a Git worktree: $repository_dir"
-    verify_tracking_origin "$repository_dir"
+    [[ -d "$repository_dir" && ! -L "$repository_dir" ]] || { track_fail "tracked repository path is not a directory: $repository_dir"; return 1; }
+    "$git_bin" -C "$repository_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { track_fail "tracked repository is not a Git worktree: $repository_dir"; return 1; }
+    verify_tracking_origin "$repository_dir" || return 1
   elif [[ "$dry_run" -eq 1 ]]; then
     printf 'Would clone %s to %s\n' "$track_url" "$repository_dir"
   else
-    mkdir -p "$track_root" || fail "could not create track root: $track_root"
-    "$git_bin" clone "$track_url" "$repository_dir" || fail "could not clone tracked repository: $track_url"
+    if [[ ! -e "$track_root" ]]; then
+      mkdir -p "$track_root" || { track_fail "could not create track root: $track_root"; return 1; }
+      track_created_root="$track_root"
+    fi
+    if [[ ! -e "$owner_dir" ]]; then
+      mkdir "$owner_dir" || { track_fail "could not create tracked repository owner directory: $owner_dir"; return 1; }
+      track_created_owner_dir="$owner_dir"
+    fi
+    track_created_repository="$repository_dir"
+    "$git_bin" clone "$track_url" "$repository_dir" || { track_fail "could not clone tracked repository: $track_url"; return 1; }
     printf 'Cloned %s to %s\n' "$track_url" "$repository_dir"
-    verify_tracking_origin "$repository_dir"
+    verify_tracking_origin "$repository_dir" || return 1
   fi
 
   schedule_tracking "$repository_dir"
@@ -330,6 +364,25 @@ rollback_installation() {
   [[ "$rollback_failed" -eq 0 ]]
 }
 
+rollback_tracking() {
+  local rollback_failed=0
+
+  if [[ -n "$track_created_repository" && ( -e "$track_created_repository" || -L "$track_created_repository" ) ]]; then
+    rm -rf -- "$track_created_repository" || rollback_failed=1
+  fi
+  if [[ -n "$track_created_owner_dir" ]]; then
+    rmdir -- "$track_created_owner_dir" 2>/dev/null || rollback_failed=1
+  fi
+  if [[ -n "$track_created_log_dir" ]]; then
+    rmdir -- "$track_created_log_dir" 2>/dev/null || rollback_failed=1
+  fi
+  if [[ -n "$track_created_root" ]]; then
+    rmdir -- "$track_created_root" 2>/dev/null || rollback_failed=1
+  fi
+
+  [[ "$rollback_failed" -eq 0 ]]
+}
+
 backup_target() {
   local target="$1"
   local timestamp
@@ -397,5 +450,10 @@ for index in "${!targets[@]}"; do
 done
 
 if [[ -n "$track_url" ]]; then
-  prepare_tracking
+  if ! prepare_tracking; then
+    if ! rollback_installation || ! rollback_tracking; then
+      fail "tracking setup failed and rollback was incomplete: ${track_error:-unknown tracking error}"
+    fi
+    fail "tracking setup failed and local configuration was rolled back: ${track_error:-unknown tracking error}"
+  fi
 fi
