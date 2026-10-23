@@ -170,7 +170,7 @@ assert_link "$local_codex_dir/AGENTS.md" "$source_root/AGENTS.md"
 
 track_bin="$test_root/track-bin"
 track_root="$(cd -P "$test_root" && pwd -P)/tracked-projects"
-runner_root="$XDG_DATA_HOME/apolo-sdlc/runners"
+runner_root="$(cd -P "$test_root" && pwd -P)/data/apolo-sdlc/runners"
 track_claude_dir="$test_root/track-claude"
 track_codex_dir="$test_root/track-codex"
 cron_file="$test_root/crontab"
@@ -350,5 +350,38 @@ fi
 grep -F 'rollback was incomplete' "$sabotage_output" >/dev/null || fail 'incomplete link rollback was not reported'
 [[ ! -e "$sabotage_track_root" ]] || fail 'incomplete link rollback skipped tracking rollback for the clone'
 [[ ! -e "$sabotage_data" ]] || fail 'incomplete link rollback skipped tracking rollback for the runner'
+
+shared_parent="$test_root/shared-new"
+shared_output="$test_root/shared-new.out"
+if XDG_DATA_HOME="$shared_parent/data" run_track https://github.com/sharedparent/demo --claude-dir "$shared_parent/claude" --codex-dir "$shared_parent/codex" --track-root "$shared_parent/tracks" --cron-bin "$track_bin/failing-crontab" 2>"$shared_output"; then
+  fail 'track mode accepted a crontab failure under a shared new parent'
+fi
+grep -F 'local configuration was rolled back' "$shared_output" >/dev/null || fail 'shared new parent produced a false incomplete rollback'
+[[ ! -e "$shared_parent" ]] || fail 'rollback left a shared new parent directory'
+
+open_share="$test_root/open-share"
+mkdir "$open_share"
+chmod 777 "$open_share"
+if XDG_DATA_HOME="$open_share/data" run_track https://github.com/openrunner/demo --claude-dir "$test_root/openrunner-claude" --codex-dir "$test_root/openrunner-codex"; then
+  fail 'track mode accepted a runner root under a directory writable by other users'
+fi
+if run_track https://github.com/opentrack/demo --claude-dir "$test_root/opentrack-claude" --codex-dir "$test_root/opentrack-codex" --track-root "$open_share/tracks"; then
+  fail 'track mode accepted a track root under a directory writable by other users'
+fi
+[[ "$(grep -Ec '# apolo-sdlc-track:open(runner|track)/demo' "$cron_file")" == 0 ]] || fail 'shared ancestor directory changed the crontab'
+
+sticky_share="$test_root/sticky-share"
+mkdir "$sticky_share"
+chmod 1777 "$sticky_share"
+XDG_DATA_HOME="$sticky_share/data" run_track https://github.com/sticky/demo --track-root "$sticky_share/tracks"
+[[ "$(grep -Fc '# apolo-sdlc-track:sticky/demo' "$cron_file")" == 1 ]] || fail 'track mode rejected a sticky shared ancestor'
+
+mkdir -p "$track_root/openclone/demo/.git"
+printf 'https://github.com/openclone/demo\n' > "$track_root/openclone/demo/.git/origin-url"
+chmod 777 "$track_root/openclone/demo"
+if run_track https://github.com/openclone/demo --claude-dir "$test_root/openclone-claude" --codex-dir "$test_root/openclone-codex"; then
+  fail 'track mode accepted an existing clone writable by other users'
+fi
+[[ "$(grep -Fc '# apolo-sdlc-track:openclone/demo' "$cron_file")" == 0 ]] || fail 'shared existing clone changed the crontab'
 
 printf 'PASS: installer behavior\n'

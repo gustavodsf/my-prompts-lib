@@ -155,6 +155,31 @@ is_private_directory() {
   [[ -z "$(find "$directory" -prune \( -perm -0020 -o -perm -0002 \) -print)" ]]
 }
 
+# Another user must not be able to rename entries in any ancestor; root-owned or sticky shared directories qualify.
+has_trusted_ancestors() {
+  local directory
+
+  directory="$(dirname "$1")"
+  while [[ ! -e "$directory" && ! -L "$directory" ]]; do
+    directory="$(dirname "$directory")"
+  done
+  while true; do
+    [[ -d "$directory" && ! -L "$directory" ]] || return 1
+    [[ -O "$directory" || -n "$(find "$directory" -prune -user 0 -print)" ]] || return 1
+    [[ -z "$(find "$directory" -prune \( -perm -0020 -o -perm -0002 \) ! -perm -1000 -print)" ]] || return 1
+    [[ "$directory" != "/" ]] || return 0
+    directory="$(dirname "$directory")"
+  done
+}
+
+create_tracking_tree() {
+  local status=0
+
+  create_directory_tree 700 "$1" || status=1
+  track_created_dirs+=(${new_dirs[@]+"${new_dirs[@]}"})
+  return "$status"
+}
+
 quote_for_shell() {
   printf '%q' "$1"
 }
@@ -170,8 +195,7 @@ install_runner() {
   runner_dir="$(dirname "$runner_path")"
   [[ -x "$monitor_path" ]] || { track_fail "monitor is not executable: $monitor_path"; return 1; }
 
-  create_directory_tree 700 "$runner_dir" || { track_created_dirs+=(${new_dirs[@]+"${new_dirs[@]}"}); track_fail "could not create runner directory: $runner_dir"; return 1; }
-  track_created_dirs+=(${new_dirs[@]+"${new_dirs[@]}"})
+  create_tracking_tree "$runner_dir" || { track_fail "could not create runner directory: $runner_dir"; return 1; }
   for directory in "$runner_root" "$(dirname "$runner_dir")" "$runner_dir"; do
     is_private_directory "$directory" || { track_fail "runner directory must be a private directory owned by the current user: $directory"; return 1; }
   done
@@ -245,6 +269,10 @@ schedule_tracking() {
 prepare_tracking() {
   local repository_dir="$track_root/${track_owner}/${track_repository}"
   local owner_dir="$track_root/${track_owner}"
+  local directory
+
+  has_trusted_ancestors "$track_root" || { track_fail "track root has an ancestor writable by other users: $track_root"; return 1; }
+  has_trusted_ancestors "$runner_root" || { track_fail "runner root has an ancestor writable by other users: $runner_root"; return 1; }
 
   if [[ -e "$repository_dir" || -L "$repository_dir" ]]; then
     [[ -d "$repository_dir" && ! -L "$repository_dir" ]] || { track_fail "tracked repository path is not a directory: $repository_dir"; return 1; }
@@ -253,13 +281,20 @@ prepare_tracking() {
   elif [[ "$dry_run" -eq 1 ]]; then
     printf 'Would clone %s to %s\n' "$track_url" "$repository_dir"
   else
-    create_directory_tree 700 "$owner_dir" || { track_created_dirs+=(${new_dirs[@]+"${new_dirs[@]}"}); track_fail "could not create tracked repository directory: $owner_dir"; return 1; }
-    track_created_dirs+=(${new_dirs[@]+"${new_dirs[@]}"})
+    create_tracking_tree "$owner_dir" || { track_fail "could not create tracked repository directory: $owner_dir"; return 1; }
     track_created_repository="$repository_dir"
     "$git_bin" clone --depth 1 "$track_url" "$repository_dir" || { track_fail "could not clone tracked repository: $track_url"; return 1; }
+    chmod 700 "$repository_dir" || { track_fail "could not restrict tracked repository: $repository_dir"; return 1; }
     printf 'Cloned %s to %s\n' "$track_url" "$repository_dir"
     verify_tracking_origin "$repository_dir" || return 1
   fi
+
+  for directory in "$track_root" "$owner_dir" "$repository_dir"; do
+    if [[ -e "$directory" ]] && ! is_private_directory "$directory"; then
+      track_fail "tracked directory must be a private directory owned by the current user: $directory"
+      return 1
+    fi
+  done
 
   schedule_tracking "$repository_dir"
 }
@@ -333,6 +368,8 @@ if [[ -n "$track_url" ]]; then
   validate_github_url "$track_url"
   track_root="$(canonicalize_directory "$track_root")"
   [[ "$track_root" != "/" ]] || fail 'unsafe track root'
+  runner_root="$(canonicalize_directory "$runner_root")"
+  [[ "$runner_root" != "/" ]] || fail 'unsafe runner root'
   validate_cron_path "$track_root/${track_owner}/${track_repository}"
   validate_cron_path "$runner_root/${track_owner}/${track_repository}/last-error.log"
 fi
@@ -464,12 +501,13 @@ for directory in "$claude_dir" "$codex_dir"; do
   if [[ "$dry_run" -eq 1 ]]; then
     [[ -d "$directory" ]] || printf 'Would create directory %s\n' "$directory"
   else
-    if ! create_directory_tree '' "$directory"; then
-      created_directories+=(${new_dirs[@]+"${new_dirs[@]}"})
+    status=0
+    create_directory_tree '' "$directory" || status=1
+    created_directories+=(${new_dirs[@]+"${new_dirs[@]}"})
+    if [[ "$status" -eq 1 ]]; then
       rollback_installation || true
       fail "could not create configuration directory: $directory"
     fi
-    created_directories+=(${new_dirs[@]+"${new_dirs[@]}"})
   fi
 done
 
@@ -508,8 +546,8 @@ done
 if [[ -n "$track_url" ]]; then
   if ! prepare_tracking; then
     rollback_failed=0
-    rollback_installation || rollback_failed=1
     rollback_tracking || rollback_failed=1
+    rollback_installation || rollback_failed=1
     if [[ "$rollback_failed" -eq 1 ]]; then
       fail "tracking setup failed and rollback was incomplete: ${track_error:-unknown tracking error}"
     fi
