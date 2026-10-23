@@ -1,6 +1,80 @@
 # my-prompts-lib
 
-A reusable library of prompts and skills for AI coding assistants (Claude Code, Copilot Chat, etc.). Project-agnostic by default — drop it into any repo and configure your base branch and Jira project per use.
+A reusable SDLC configuration library for Claude Code and Codex. Keep one clone as the source of truth, then link its rules, commands, skills, templates, and error catalog into both assistants.
+
+## Safe installation
+
+Keep this clone available after installation: the assistants use symbolic links, so updates pulled into the clone are immediately available without copying configuration files.
+
+Preview the changes first. This command never changes configuration:
+
+```bash
+./scripts/install.sh --dry-run --replace
+```
+
+To install on macOS or Linux, explicitly authorize backup and replacement of existing managed targets:
+
+```bash
+./scripts/install.sh --replace
+```
+
+On Windows, run the equivalent command in Command Prompt:
+
+```bat
+scripts\install.bat --dry-run --replace
+scripts\install.bat --replace
+```
+
+The installer links `CLAUDE.md` for Claude, `AGENTS.md` for Codex, and `sdlc`, `commands`, and `skills` for both. A regular pre-existing managed target is renamed in place as `<name>-old-<timestamp>` only when `--replace` is present. Existing symbolic links are refused, even with `--replace`.
+
+Windows symbolic links require Developer Mode or an elevated Command Prompt. Do not delete the managed clone while its links are active.
+
+## Authorized GitHub monitor
+
+The monitor reads open GitHub issues and pull requests by default. It starts Claude only for the one issue persisted by an explicit authorization. The shell monitor never writes to GitHub or AWS directly.
+
+After a human has said `vamos trabalhar <issue-number>`, persist that authorization from the clone:
+
+```bash
+./scripts/monitor.sh --authorize 123
+./scripts/monitor.sh --repo /absolute/path/to/project --dry-run
+./scripts/monitor.sh --repo /absolute/path/to/project
+```
+
+The Windows equivalent is:
+
+```bat
+scripts\monitor.bat --authorize 123
+scripts\monitor.bat --repo C:\absolute\path\to\project --dry-run
+scripts\monitor.bat --repo C:\absolute\path\to\project
+```
+
+Only one issue may be authorized at a time. Clear it before authorizing another issue:
+
+```bash
+./scripts/monitor.sh --clear-authorization
+```
+
+The authorization state is local: `~/.local/state/apolo-sdlc/authorized-issue` on macOS/Linux and `%LOCALAPPDATA%\apolo-sdlc\authorized-issue` on Windows. The monitor blocks concurrent runs for the same authorization.
+
+When an authorized issue runs, Claude uses `dontAsk` with a fixed allowlist for repository work, GitHub issue/PR actions, common test commands, and `curl` API validation. `bypassPermissions` is not used. The delegated workflow may inspect AWS only when necessary and only read-only; AWS writes are prohibited.
+
+## Scheduling
+
+Create schedules yourself; the installer does not register cron jobs or Windows scheduled tasks. For a 15-minute macOS/Linux cron entry, use absolute paths and a log outside the repository:
+
+```cron
+*/15 * * * * /absolute/path/to/my-prompts-lib/scripts/monitor.sh --repo /absolute/path/to/project >> /absolute/path/to/logs/apolo-sdlc-monitor.log 2>&1
+```
+
+For Windows Task Scheduler, create an action that starts `scripts\monitor.bat` every 15 minutes and pass `--repo C:\absolute\path\to\project` as its arguments. The scheduled user must have an authenticated `gh` CLI and a working Claude CLI.
+
+## Workflow guarantees
+
+- Guided ClickUp/Jira work keeps the human at approval gates and never accesses AWS.
+- GitHub automation begins only after the persisted authorization, keeps task artifacts local, and comments only with concise sanitized progress.
+- API validation uses visible terminal HTTP evidence. UI/E2E validation uses a visible browser and sanitized screenshots or console/network evidence.
+- Claude work is reviewed in Codex and Codex work in Claude, with independent correctness, performance, security, and duplication review areas.
 
 ## Contents
 
