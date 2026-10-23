@@ -29,9 +29,12 @@ mkdir -p "$checkout"
 
 new_runner() {
   local runner="$test_root/runners/$1"
-  mkdir -p "$runner"
+  mkdir -p "$runner/lanes"
   cp "$lane_source" "$runner/lane.sh"
   chmod 700 "$runner/lane.sh"
+  printf 'ISSUE LANE PROMPT\n' > "$runner/lanes/issue.md"
+  printf 'CI LANE PROMPT\n' > "$runner/lanes/ci.md"
+  printf '{"permissions":{"deny":[]}}\n' > "$runner/lanes/deny.json"
   printf '%s\n' "$runner"
 }
 
@@ -122,5 +125,88 @@ GH_BIN="$absent/gh" expect_rejection 'a missing gh executable' 'gh' "$runner" ci
 GIT_BIN="$absent/git" expect_rejection 'a missing git executable' 'git' "$runner" ci
 CODEX_BIN="$absent/codex" expect_rejection 'a missing codex executable for the issue lane' 'codex' "$runner" issue
 CODEX_BIN="$absent/codex" run_lane "$runner" ci || fail 'ci lane required codex'
+
+no_prompt="$(new_runner no-prompt)"
+write_valid_conf "$no_prompt"
+rm "$no_prompt/lanes/ci.md"
+expect_rejection 'a missing lane prompt' 'prompt' "$no_prompt" ci
+
+no_deny="$(new_runner no-deny)"
+write_valid_conf "$no_deny"
+rm "$no_deny/lanes/deny.json"
+expect_rejection 'missing deny rules' 'deny' "$no_deny" issue
+
+no_checkout="$(new_runner no-checkout)"
+write_valid_conf "$no_checkout"
+sed -i "s|^checkout=.*|checkout=$test_root/absent-checkout|" "$no_checkout/project.conf"
+expect_rejection 'a missing checkout directory' 'checkout' "$no_checkout" issue
+
+recording_claude="$fake_bin/recording-claude"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "%s\n" "$@" > "$CLAUDE_RECORD/args"' \
+  'printf "%s\n" "${APOLO_SDLC_LANE:-unset}" > "$CLAUDE_RECORD/lane"' \
+  'pwd -P > "$CLAUDE_RECORD/cwd"' \
+  'cat > "$CLAUDE_RECORD/stdin"' \
+  'printf "claude output %s\n" "$APOLO_SDLC_LANE"' \
+  'printf "claude warning\n" >&2' \
+  'exit "${FAKE_CLAUDE_RC:-0}"' > "$recording_claude"
+chmod +x "$recording_claude"
+record="$test_root/record"
+mkdir -p "$record"
+
+run_recorded() {
+  CLAUDE_BIN="$recording_claude" CLAUDE_RECORD="$record" run_lane "$@"
+}
+
+executed="$(new_runner executed)"
+write_valid_conf "$executed"
+run_recorded "$executed" issue > "$test_root/out" || fail 'lane failed with a valid configuration'
+
+expected_args="$(printf '%s\n' -p --dangerously-skip-permissions --settings "$executed/lanes/deny.json")"
+[[ "$(cat "$record/args")" == "$expected_args" ]] || fail "lane passed unexpected Claude arguments: $(cat "$record/args")"
+[[ "$(cat "$record/lane")" == 'issue' ]] || fail 'lane did not export APOLO_SDLC_LANE'
+[[ "$(cat "$record/cwd")" == "$(cd "$checkout" && pwd -P)" ]] || fail 'lane did not run Claude in the checkout'
+for expected in 'repo: acme/demo' 'owner: acme-owner' "checkout: $checkout" "worktrees: $test_root/worktrees" \
+  "docs: $test_root/docs" "state: $executed/state" 'evidence_branch: qa-evidence' 'lane: issue'; do
+  grep -qxF -- "$expected" "$record/stdin" || fail "lane prompt is missing configuration line: $expected"
+done
+[[ "$(tail -n 1 "$record/stdin")" == 'ISSUE LANE PROMPT' ]] || fail 'lane prompt did not end with the lane instructions'
+grep -q 'CI LANE PROMPT' "$record/stdin" && fail 'issue lane received the ci prompt'
+[[ ! -s "$test_root/out" ]] || fail 'lane wrote Claude output to standard output instead of the log'
+
+issue_log="$executed/logs/issue.log"
+grep -q 'claude output issue' "$issue_log" || fail 'lane did not log Claude standard output'
+grep -q 'claude warning' "$issue_log" || fail 'lane did not log Claude standard error'
+run_recorded "$executed" issue || fail 'second lane run failed'
+[[ "$(grep -c 'claude output issue' "$issue_log")" -eq 2 ]] || fail 'lane log was not appended'
+[[ -z "$(find "$executed/logs" -prune \( -perm -0040 -o -perm -0004 -o -perm -0020 -o -perm -0002 \) -print)" ]] || fail 'lane log directory is not private'
+
+run_recorded "$executed" ci || fail 'ci lane failed'
+[[ "$(cat "$record/lane")" == 'ci' ]] || fail 'ci lane exported the wrong lane'
+[[ "$(tail -n 1 "$record/stdin")" == 'CI LANE PROMPT' ]] || fail 'ci lane did not use its prompt'
+grep -q 'claude output ci' "$executed/logs/ci.log" || fail 'ci lane did not use its own log'
+
+if FAKE_CLAUDE_RC=3 run_recorded "$executed" issue; then
+  fail 'lane hid a Claude failure'
+else
+  [[ $? -eq 3 ]] || fail 'lane did not propagate the Claude exit code'
+fi
+[[ ! -e "$executed/lanes.lock" ]] || fail 'lane left its lock behind after a failure'
+
+sleep 30 &
+holder=$!
+mkdir "$executed/lanes.lock"
+printf '%s\n' "$holder" > "$executed/lanes.lock/pid"
+rm -f "$record/args"
+run_recorded "$executed" ci > "$test_root/out" 2>&1 || fail 'lane failed while another lane held the lock'
+[[ ! -e "$record/args" ]] || fail 'lane ran Claude while another lane held the lock'
+[[ ! -s "$test_root/out" ]] || fail 'lane was not silent while the lock was held'
+kill "$holder"
+wait "$holder" 2>/dev/null || true
+
+run_recorded "$executed" ci || fail 'lane did not recover a stale lock'
+[[ -e "$record/args" ]] || fail 'lane skipped Claude after the lock holder exited'
+[[ ! -e "$executed/lanes.lock" ]] || fail 'lane did not release the recovered lock'
 
 printf 'PASS: lane behavior\n'
