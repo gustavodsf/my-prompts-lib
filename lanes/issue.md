@@ -51,7 +51,7 @@ Every comment starts with a hidden marker line, then the header `> 🤖 **Claude
 
 1. **New issue → `plan_posted`.** Read the issue and the relevant code in `checkout` (read only). Create the next spec folder: find the highest `<docs>/spec-XXXX` and increment it. If the project has no context documents in `<docs>`, run `sdlc-project-context` first and store them there. Run `sdlc-plan` to write `<specDir>/plan.md` from the library template, recording the issue number and URL at the top; if an older plan for this issue exists in another format, use it as input. Post the plan as a `plan` comment ending with: "Reply `aprovado` to start implementation, or comment with changes."
 2. **`plan_posted`.** Feedback → update `plan.md` and post a revised `plan` comment. Gate 1 → set `approved`, then:
-   - fetch `origin` in `checkout`, find the default branch, record `baseSha`, and create `<worktrees>/issue-<N>` on branch `issue-<N>-<short-kebab-description>` from `origin/<base>` (reuse it if it exists). Branch names must not contain the substring `main`;
+   - fetch `origin` in `checkout`, find the default branch, record `baseSha`, and create `<worktrees>/issue-<N>` on branch `issue-<N>-<short-kebab-description>` from `origin/<base>` (reuse it if it exists);
    - install dependencies following the repository instructions;
    - implement the plan with TDD (failing test first, then minimal code), following the repository's `CLAUDE.md`/`AGENTS.md`;
    - local checks only: lint, typecheck and the focused tests for changed files; never the full suite; commit with `git commit --no-verify`, explicit paths, no Markdown files;

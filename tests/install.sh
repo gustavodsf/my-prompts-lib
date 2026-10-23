@@ -543,6 +543,24 @@ fi
 run_track https://github.com/nolanes/demo --gh-bin "$track_bin/gh" --dry-run > /dev/null || fail 'installer rejected track mode without lanes'
 [[ ! -s "$gh_log" ]] || fail 'installer called gh without lanes'
 
+assert_runner_denies() {
+  local installed="$lane_runner_dir/lanes/deny.json"
+  local rule
+  python3 -I -c 'import json, sys; json.load(open(sys.argv[1]))' "$installed" 2>/dev/null || fail 'installed deny rules are not valid JSON'
+  python3 -I -c '
+import json, sys
+deny = lambda path: set(json.load(open(path))["permissions"]["deny"])
+sys.exit(not deny(sys.argv[2]) <= deny(sys.argv[1]))' "$installed" "$source_root/lanes/deny.json" \
+    || fail 'installed deny rules lost versioned rules'
+  for rule in "Edit(/$lane_runner_dir/lane.sh)" "Write(/$lane_runner_dir/lane.sh)" \
+    "Edit(/$lane_runner_dir/lanes/**)" "Write(/$lane_runner_dir/lanes/**)" \
+    "Edit(/$lane_runner_dir/project.conf)" "Write(/$lane_runner_dir/project.conf)" \
+    "Bash(*$lane_runner_dir/lanes*)" "Bash(*$lane_runner_dir/lane.sh*)" "Bash(*$lane_runner_dir/project.conf*)"; do
+    python3 -I -c 'import json, sys; sys.exit(sys.argv[2] not in json.load(open(sys.argv[1]))["permissions"]["deny"])' "$installed" "$rule" \
+      || fail "installed deny rules do not protect the runner: $rule"
+  done
+}
+
 assert_private() {
   [[ -z "$(find "$1" -prune \( -perm -0040 -o -perm -0004 -o -perm -0020 -o -perm -0002 \) -print)" ]] || fail "$2 is not private: $1"
 }
@@ -554,7 +572,7 @@ assert_lane_files() {
   grep -qF "lane-runner-$version" "$lane_runner_dir/lane.sh" || fail "lane runner is not $version"
   grep -qxF "issue prompt $version" "$lane_runner_dir/lanes/issue.md" || fail "issue prompt is not $version"
   grep -qxF "ci prompt $version" "$lane_runner_dir/lanes/ci.md" || fail "ci prompt is not $version"
-  cmp -s "$source_root/lanes/deny.json" "$lane_runner_dir/lanes/deny.json" || fail 'deny rules were not copied'
+  assert_runner_denies
   assert_private "$lane_runner_dir/lanes" 'lane prompt directory'
   for directory in state logs; do
     [[ -d "$lane_runner_dir/$directory" ]] || fail "lane $directory directory was not created"
@@ -603,6 +621,12 @@ fi
 
 run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" > /dev/null || fail 'installer failed to reinstall lanes'
 assert_lane_files v2
+
+cp "$source_root/lanes/deny.json" "$test_root/synthetic-deny.json"
+cp "$repo_root/lanes/deny.json" "$source_root/lanes/deny.json"
+run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" > /dev/null || fail 'installer failed with the repository deny rules'
+assert_runner_denies
+cp "$test_root/synthetic-deny.json" "$source_root/lanes/deny.json"
 
 fresh_lane_data="$test_root/fresh-lane-data"
 if XDG_DATA_HOME="$fresh_lane_data" run_lanes https://github.com/lanes/demo --lanes issue --checkout "$lane_checkout" --cron-bin "$track_bin/failing-crontab" 2>/dev/null; then

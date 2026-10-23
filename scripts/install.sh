@@ -271,6 +271,21 @@ write_lane_config() {
   [[ -z "$lane_codex_bin" ]] || printf 'codex_bin=%s\n' "$lane_codex_bin"
 }
 
+# The versioned rules cannot name this runner, so the lane is denied edits to its own runner files here.
+render_runner_denies() {
+  local runner_dir="$1"
+  local rules=""
+  local rule
+
+  for rule in "Edit(/$runner_dir/lane.sh)" "Write(/$runner_dir/lane.sh)" \
+    "Edit(/$runner_dir/lanes/**)" "Write(/$runner_dir/lanes/**)" \
+    "Edit(/$runner_dir/project.conf)" "Write(/$runner_dir/project.conf)" \
+    "Bash(*$runner_dir/lanes*)" "Bash(*$runner_dir/lane.sh*)" "Bash(*$runner_dir/project.conf*)"; do
+    rules+="\"$rule\","
+  done
+  sed "s|\"deny\"[[:space:]]*:[[:space:]]*\[|&$rules|" "$source_dir/lanes/deny.json"
+}
+
 # The previous lane set is kept until the crontab update succeeds so a failure restores it intact.
 install_lane_files() {
   local runner_dir="$1"
@@ -305,13 +320,19 @@ install_lane_files() {
     track_fail "could not stage lane files in $runner_dir"
     return 1
   fi
-  for file in issue.md ci.md deny.json; do
+  for file in issue.md ci.md; do
     if ! cp -- "$source_dir/lanes/$file" "$staging/lanes/$file" || ! chmod 600 "$staging/lanes/$file"; then
       rm -rf -- "$staging"
       track_fail "could not stage lane file: $file"
       return 1
     fi
   done
+  if ! render_runner_denies "$runner_dir" > "$staging/lanes/deny.json" || ! chmod 600 "$staging/lanes/deny.json" \
+    || ! grep -qF "Edit(/$runner_dir/lane.sh)" "$staging/lanes/deny.json"; then
+    rm -rf -- "$staging"
+    track_fail "could not render lane deny rules for $runner_dir"
+    return 1
+  fi
 
   if ! rm -rf -- "$runner_dir/lanes" || ! mv -- "$staging/lanes" "$runner_dir/lanes" \
     || ! mv -f -- "$staging/lane.sh" "$runner_dir/lane.sh" || ! mv -f -- "$staging/project.conf" "$runner_dir/project.conf"; then
@@ -523,6 +544,7 @@ validate_lane_options() {
   for source_file in scripts/lane.sh lanes/issue.md lanes/ci.md lanes/deny.json; do
     [[ -f "$source_dir/$source_file" ]] || fail "lane source file is missing: $source_dir/$source_file"
   done
+  [[ "$runner_root" != *[\"\\\&\|\*\?\[]* ]] || fail "runner path cannot be written into deny rules safely: $runner_root"
 
   if [[ -z "$owner" ]]; then
     owner="$("$gh_bin" api user --jq .login 2>/dev/null)" || fail 'could not resolve the GitHub owner with gh; pass --owner'

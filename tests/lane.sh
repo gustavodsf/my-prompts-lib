@@ -240,16 +240,29 @@ lanes_dir="$repo_root/lanes"
 deny_rules="$lanes_dir/deny.json"
 [[ -f "$deny_rules" ]] || fail "expected versioned deny rules: $deny_rules"
 python3 -I -c 'import json, sys; json.load(open(sys.argv[1]))' "$deny_rules" 2>/dev/null || fail 'deny rules are not valid JSON'
+has_deny_rule() {
+  python3 -I -c 'import json, sys; sys.exit(sys.argv[2] not in json.load(open(sys.argv[1]))["permissions"]["deny"])' "$1" "$2"
+}
+for rule in 'Bash(*git push*main*)' 'Bash(git push origin main*)'; do
+  if has_deny_rule "$deny_rules" "$rule"; then
+    fail "deny rules still block every push containing main: $rule"
+  fi
+done
 for rule in \
   'Bash(*cdk deploy*)' 'Bash(*cdk destroy*)' 'Bash(*db:migrate:deploy*)' 'Bash(*gh api*dispatches*)' \
-  'Bash(*gh pr merge*)' 'Bash(*gh workflow enable*)' 'Bash(*gh workflow run*)' 'Bash(*git push*main*)' \
+  'Bash(*gh*pr*merge*)' 'Bash(*gh workflow enable*)' 'Bash(*gh workflow run*)' \
+  'Bash(*gh api*merge*)' 'Bash(*gh api*git/refs*)' 'Bash(*gh*run*rerun*)' \
+  'Bash(*force-with-lease*)' 'Bash(*git*push*--force*)' 'Bash(*git*push* -f*)' 'Bash(*git*push*+*)' \
+  'Bash(*git*push*:main*)' 'Bash(*git*push* main)' 'Bash(*git*push* main *)' \
+  'Bash(*git*push*:master*)' 'Bash(*git*push* master)' 'Bash(*git*push* master *)' \
+  'Bash(*crontab*)' 'Edit(~/.claude/settings*.json)' 'Write(~/.claude/settings*.json)' \
+  'Edit(~/.claude.json)' 'Write(~/.claude.json)' \
   'Bash(*prisma migrate deploy*)' 'Bash(*release:api*)' 'Bash(aws *attach*)' 'Bash(aws *create*)' \
   'Bash(aws *delete*)' 'Bash(aws *deploy*)' 'Bash(aws *detach*)' 'Bash(aws *invoke*)' 'Bash(aws *modify*)' \
   'Bash(aws *put*)' 'Bash(aws *remove*)' 'Bash(aws *set-*)' 'Bash(aws *start*)' 'Bash(aws *stop*)' \
   'Bash(aws *tag*)' 'Bash(aws *terminate*)' 'Bash(aws *update*)' 'Bash(aws *upload*)' 'Bash(aws s3 cp*)' \
-  'Bash(aws s3 mv*)' 'Bash(aws s3 rm*)' 'Bash(aws s3 sync*)' 'Bash(gh pr merge*)' 'Bash(gh repo delete*)' \
-  'Bash(git push --force*)' 'Bash(git push -f*)' 'Bash(git push origin main*)' 'Bash(git reset --hard*)' \
-  'Bash(sudo *)'; do
+  'Bash(aws s3 mv*)' 'Bash(aws s3 rm*)' 'Bash(aws s3 sync*)' 'Bash(gh repo delete*)' \
+  'Bash(git reset --hard*)' 'Bash(sudo *)'; do
   python3 -I -c 'import json, sys; sys.exit(sys.argv[2] not in json.load(open(sys.argv[1]))["permissions"]["deny"])' \
     "$deny_rules" "$rule" || fail "deny rules lost: $rule"
 done
@@ -274,6 +287,14 @@ assert_lane_prompt ci sdlc-pr sdlc-review
 for gate in 'aprovado' 'aprovado: 1, 3' 'evidence_branch'; do
   grep -qF "$gate" "$lanes_dir/issue.md" || fail "issue lane prompt does not cover: $gate"
 done
+
+if grep -qF 'gh run rerun' "$lanes_dir/ci.md"; then
+  fail 'ci lane prompt still reruns workflows the deny rules block'
+fi
+grep -qF 'ask the owner to re-run' "$lanes_dir/ci.md" || fail 'ci lane prompt does not hand flaky reruns to the owner'
+if grep -qF 'must not contain the substring `main`' "$lanes_dir/issue.md"; then
+  fail 'issue lane prompt still works around the removed main substring rule'
+fi
 
 for rule in 'isCrossRepository' 'headRepositoryOwner' 'never check out, install, build, test or run'; do
   grep -qF "$rule" "$lanes_dir/ci.md" || fail "ci lane prompt does not restrict untrusted pull requests: $rule"

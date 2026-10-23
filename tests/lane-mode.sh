@@ -53,6 +53,7 @@ require_text "$repo_root/skills/sdlc-github-issue/SKILL.md" 'The read-only sched
 readme="$repo_root/README.md"
 require_text "$readme" '## Autonomous lanes'
 for text in '--lanes issue,ci' '--checkout' '--owner' 'sdlc/lane-mode.md' 'lanes/deny.json' 'APOLO_SDLC_LANE' \
+  'branch protection' \
   'logs/issue.log' 'last-error.log' 'without `--lanes`' 'aprovado'; do
   require_text "$readme" "$text"
 done

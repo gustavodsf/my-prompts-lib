@@ -39,7 +39,7 @@ Every comment starts with `<!-- claude-agent:ci -->`, then `> 🤖 **Claude** ·
 2. **Broken PR pipeline.** For each open trusted PR, check `gh pr checks <N> -R <repo>`. If a check failed on the current head SHA and that SHA is not `lastFailedShaReported`:
    - read the logs (`gh run list -R <repo> --branch <branch> --limit 5`, `gh run view <id> -R <repo> --log-failed`);
    - cause clearly in this PR's code (lint, formatter, typecheck, a test broken by the change): fix it, run local checks, commit, run `sdlc-review` in delta mode, push, and comment with the cause and the fix;
-   - flaky or infrastructural (timeouts, network, runner errors): run `gh run rerun <id> --failed -R <repo>` once, on the CI workflow only, and comment that;
+   - flaky or infrastructural (timeouts, network, runner errors): change nothing; comment that the failure looks flaky and ask the owner to re-run the failed jobs. The lane never re-runs workflows itself;
    - failing on the default branch too, or caused outside the PR: change nothing, comment a short diagnosis and wait for the owner;
    - store the SHA in `lastFailedShaReported` so each failure is handled once.
 3. **Failed release or deploy runs.** List recent runs of the repository's release and deploy workflows (`gh workflow list -R <repo>`, then `gh run list -R <repo> --workflow <file> --limit 5`). For a failed run not yet in `runs`:
