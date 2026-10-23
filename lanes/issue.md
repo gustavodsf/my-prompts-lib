@@ -10,7 +10,7 @@ Each run works on at most ONE issue and advances it by at most ONE stage, then s
 - This run is unattended: `lane.sh` started it from cron with `claude -p`, permission prompts off and the lane deny rules on. It already holds the lane lock; do not create another one.
 - Configuration values come only from the block above: `repo`, `owner`, `checkout`, `worktrees`, `docs`, `state`, `evidence_branch`. Prefer absolute paths built from them.
 - Use `gh` with `-R <repo>`. Post every comment with `--body-file <absolute path>`.
-- If `<state>/bot-token` exists, run every `gh` command and `git push` that writes to GitHub with `GH_TOKEN=<its contents>`. Never print the token.
+- If a bot token is configured, `GH_TOKEN` is already set in your environment by the runner, so `gh` acts as the bot account; check with `gh api user --jq .login`. Never read, print, copy or pass the token yourself, and never open `<state>/bot-token`.
 - Long commands (dev servers, Playwright, Codex) must outlive the run: start them with `setsid nohup sh -c '<cmd> > <specDir>/jobs/<name>.log 2>&1; echo $? > <specDir>/jobs/<name>.exit' &`, record `pendingJob` in state, wait with Monitor for the `.exit` file, and if the run must end first, end cleanly; the next run resumes from `pendingJob` without restarting the job.
 
 ## Who may instruct you

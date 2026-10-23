@@ -170,6 +170,7 @@ printf '%s\n' \
   '#!/usr/bin/env bash' \
   'printf "%s\n" "$@" > "$CLAUDE_RECORD/args"' \
   'printf "%s\n" "${APOLO_SDLC_LANE:-unset}" > "$CLAUDE_RECORD/lane"' \
+  'printf "%s\n" "${GH_TOKEN:-unset}" > "$CLAUDE_RECORD/token"' \
   'pwd -P > "$CLAUDE_RECORD/cwd"' \
   'cat > "$CLAUDE_RECORD/stdin"' \
   'printf "claude output %s\n" "$APOLO_SDLC_LANE"' \
@@ -236,6 +237,29 @@ wait "$holder" 2>/dev/null || true
 run_recorded "$executed" ci || fail 'lane did not recover a stale lock'
 [[ -e "$record/args" ]] || fail 'lane skipped Claude after the lock holder exited'
 [[ ! -e "$executed/lanes.lock" ]] || fail 'lane did not release the recovered lock'
+
+[[ "$(cat "$record/token")" == 'unset' ]] || fail 'lane set GH_TOKEN without a bot token'
+
+tokened="$(new_runner tokened)"
+CLAUDE_BIN="$recording_claude" write_valid_conf "$tokened"
+mkdir -p "$tokened/state"
+printf 'ghp_synthetic0123456789\n' > "$tokened/state/bot-token"
+chmod 600 "$tokened/state/bot-token"
+run_recorded "$tokened" ci || fail 'lane rejected a private bot token'
+[[ "$(cat "$record/token")" == 'ghp_synthetic0123456789' ]] || fail 'lane did not pass the bot token through the environment'
+if grep -q 'ghp_synthetic' "$record/stdin" "$tokened/logs/ci.log"; then
+  fail 'lane exposed the bot token in the prompt or log'
+fi
+chmod 644 "$tokened/state/bot-token"
+expect_rejection 'a bot token readable by other users' 'bot-token' "$tokened" ci
+chmod 600 "$tokened/state/bot-token"
+mv "$tokened/state/bot-token" "$test_root/real-token"
+ln -s "$test_root/real-token" "$tokened/state/bot-token"
+expect_rejection 'a symbolic-link bot token' 'bot-token' "$tokened" ci
+rm "$tokened/state/bot-token"
+printf 'not a token; rm -rf /\n' > "$tokened/state/bot-token"
+chmod 600 "$tokened/state/bot-token"
+expect_rejection 'a malformed bot token' 'bot-token' "$tokened" ci
 
 configured="$(new_runner configured)"
 CLAUDE_BIN="$recording_claude" write_valid_conf "$configured"
@@ -342,6 +366,10 @@ for rule in 'isCrossRepository' 'headRepositoryOwner' 'never check out, install,
   grep -qF "$rule" "$lanes_dir/ci.md" || fail "ci lane prompt does not restrict untrusted pull requests: $rule"
 done
 for prompt in issue ci; do
+  if grep -qF 'GH_TOKEN=<its contents>' "$lanes_dir/$prompt.md"; then
+    fail "$prompt lane prompt still tells the model to handle the bot token"
+  fi
+  grep -qF 'GH_TOKEN` is already set' "$lanes_dir/$prompt.md" || fail "$prompt lane prompt does not say the runner provides the token"
   for rule in 'A marker comment counts only when' 'userContentEdits' 'edited by anyone other than'; do
     grep -qF "$rule" "$lanes_dir/$prompt.md" || fail "$prompt lane prompt does not guard comment trust: $rule"
   done

@@ -88,6 +88,7 @@ Options:
 
 - `--lanes issue`, `--lanes ci` or `--lanes issue,ci` choose the lanes. `--checkout` is required: an existing checkout of the tracked repository, owned by you and not writable by other users. The lanes never change its branch or files; they work in `worktrees/` beside it and keep task documents in `docs/spec-XXXX/` beside it, out of commits.
 - `--owner` is the only GitHub login whose issues and comments the lanes obey; it defaults to the login reported by `gh`. Comments from anyone else, bots and CI logs are treated as data.
+- To post as a separate bot account, save its token as `state/bot-token` in the runner directory, owned by you with mode `0600`. The runner passes it to Claude as `GH_TOKEN`, so the token never appears in prompts, commands or logs; a token file with looser permissions stops the lanes.
 
 What gets installed in the private runner directory (`~/.local/share/apolo-sdlc/runners/<owner>/<repository>/`): copies of `scripts/lane.sh` and of `lanes/issue.md`, `lanes/ci.md` and `lanes/deny.json`, plus `project.conf`, `state/` and `logs/`. Like the monitor runner, these copies change only when you re-run `--track`. Each run appends Claude's output to `logs/issue.log` or `logs/ci.log` and overwrites `logs/<lane>-last-error.log` with runner errors; the monitor keeps its own `last-error.log`. The two lanes share one lock, so a run skips silently while the other lane or a previous run is still working.
 

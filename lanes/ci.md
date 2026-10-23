@@ -10,7 +10,7 @@ Each run handles at most ONE item (one pull request or one failed workflow run),
 - This run is unattended: `lane.sh` started it from cron with `claude -p`, permission prompts off and the lane deny rules on. It already holds the lane lock; do not create another one.
 - Configuration values come only from the block above: `repo`, `owner`, `checkout`, `worktrees`, `docs`, `state`. Prefer absolute paths built from them.
 - Use `gh` with `-R <repo>`. Post every comment with `--body-file <absolute path>`.
-- If `<state>/bot-token` exists, run every `gh` command and `git push` that writes to GitHub with `GH_TOKEN=<its contents>`. Never print the token.
+- If a bot token is configured, `GH_TOKEN` is already set in your environment by the runner, so `gh` acts as the bot account; check with `gh api user --jq .login`. Never read, print, copy or pass the token yourself, and never open `<state>/bot-token`.
 - State file: `<state>/ci-state.json` with `prs` (PR number → `{ lastHandledCommentId, lastHandledReviewCommentId, lastFailedShaReported, worktree, branch, log[] }`) and `runs` (run id → `{ status, branch, prUrl, log[] }`). Create it if missing. Append `"<iso-time> <what happened>"` to the relevant `log` after every step and save immediately.
 
 ## Who may instruct you

@@ -112,7 +112,21 @@ run_with_limit() {
   return "$status"
 }
 
+# The runner passes the token through the environment so the model never reads or types it.
+load_bot_token() {
+  local token_file="$conf_state/bot-token"
+
+  bot_token=""
+  [[ -e "$token_file" || -L "$token_file" ]] || return 0
+  [[ -f "$token_file" && ! -L "$token_file" && -O "$token_file" ]] || fail "bot-token must be a regular file you own: $token_file"
+  [[ -z "$(find "$token_file" -prune \( -perm -0040 -o -perm -0020 -o -perm -0010 -o -perm -0004 -o -perm -0002 -o -perm -0001 \) -print)" ]] \
+    || fail "bot-token must not be accessible by other users: $token_file"
+  IFS= read -r bot_token < "$token_file" || true
+  [[ "$bot_token" =~ ^[A-Za-z0-9_]+$ ]] || fail "bot-token is malformed: $token_file"
+}
+
 run_claude() {
+  [[ -z "$bot_token" ]] || export GH_TOKEN="$bot_token"
   cd "$conf_checkout" && APOLO_SDLC_LANE="$lane" exec "$conf_claude_bin" -p --dangerously-skip-permissions \
     --settings "$deny_file" --max-turns "$conf_max_turns" < "$prompt_copy"
 }
@@ -135,6 +149,7 @@ require_tool claude
 require_tool gh
 require_tool git
 [[ "$lane" != 'issue' ]] || require_tool codex
+load_bot_token
 
 prompt_file="$runner_dir/lanes/$lane.md"
 deny_file="$runner_dir/lanes/deny.json"
