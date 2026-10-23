@@ -172,13 +172,17 @@ track_root="$(cd -P "$test_root" && pwd -P)/tracked-projects"
 track_claude_dir="$test_root/track-claude"
 track_codex_dir="$test_root/track-codex"
 cron_file="$test_root/crontab"
+track_git_log="$test_root/track-git.log"
 mkdir -p "$track_bin"
 printf '%s\n' \
   '#!/usr/bin/env bash' \
+  '[[ -z "${TRACK_GIT_LOG:-}" ]] || printf "git %s\\n" "$*" >> "$TRACK_GIT_LOG"' \
   'if [[ "$1" == "clone" ]]; then' \
   '  [[ "${TRACK_FAIL_CLONE:-0}" != "1" ]] || exit 1' \
-  '  mkdir -p "$3/.git"' \
-  '  printf "%s\\n" "$2" > "$3/.git/origin-url"' \
+  '  repository_dir="${!#}"' \
+  '  track_url="${@: -2:1}"' \
+  '  mkdir -p "$repository_dir/.git"' \
+  '  printf "%s\\n" "$track_url" > "$repository_dir/.git/origin-url"' \
   '  exit 0' \
   'fi' \
   'if [[ "$1" == "-C" && "$3" == "rev-parse" && "$4" == "--is-inside-work-tree" ]]; then exit 0; fi' \
@@ -201,16 +205,20 @@ printf '%s\n' \
   'exit 1' > "$track_bin/failing-crontab"
 chmod +x "$track_bin/failing-crontab"
 
-TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
+TRACK_GIT_LOG="$track_git_log" TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
 
 assert_link "$track_claude_dir/CLAUDE.md" "$source_root/CLAUDE.md"
 assert_link "$track_codex_dir/AGENTS.md" "$source_root/AGENTS.md"
 [[ -d "$track_root/example/demo/.git" ]] || fail 'track mode did not prepare a local clone'
-if ! grep -F "$source_root/scripts/monitor.sh --repo $track_root/example/demo" "$cron_file" >/dev/null; then
+if ! grep -F "$source_root/scripts/monitor.sh --scheduled --repo $track_root/example/demo" "$cron_file" >/dev/null; then
   sed -n '1,10p' "$cron_file" >&2
   fail 'track mode did not target the cloned repository'
 fi
 grep -F '# apolo-sdlc-track:example/demo' "$cron_file" >/dev/null || fail 'track mode did not mark its cron entry'
+grep -F 'git clone --depth 1 https://github.com/example/demo ' "$track_git_log" >/dev/null || fail 'track mode did not use a shallow clone'
+if rg -F '>> ' "$cron_file" >/dev/null; then
+  fail 'track mode created an unbounded cron log redirect'
+fi
 if rg -q 'claude|curl|aws|gh issue comment|git push|gh pr create' "$cron_file"; then
   fail 'track mode added a cron entry with a write or external execution path'
 fi

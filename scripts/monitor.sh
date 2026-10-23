@@ -8,6 +8,7 @@ state_root="${XDG_STATE_HOME:-${HOME}/.local/state}/apolo-sdlc"
 limit=30
 max_limit=50
 dry_run=0
+scheduled=0
 authorize_issue=""
 clear_authorization=0
 repo_remote=""
@@ -26,6 +27,7 @@ Options:
   --repo PATH                Repository to track.
   --state-file PATH          Authorization state file; it remains bound to --repo.
   --limit NUMBER             Read limit when no issue is authorized. Range: 1-50. Default: 30.
+  --scheduled                Run the silent read-only scheduled check.
   --dry-run                  Inspect GitHub work without changing state.
   --help                     Show this help.
 EOF
@@ -68,6 +70,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run)
       dry_run=1
+      shift
+      ;;
+    --scheduled)
+      scheduled=1
       shift
       ;;
     --help)
@@ -156,6 +162,9 @@ if [[ "$clear_authorization" -eq 1 ]]; then
 fi
 
 if [[ ! -e "$state_file" ]]; then
+  if [[ "$scheduled" -eq 1 ]]; then
+    exit 0
+  fi
   list_open_work
   printf 'No authorized issue. Monitoring completed without starting Claude.\n'
   exit 0

@@ -127,8 +127,6 @@ quote_for_shell() {
 
 schedule_tracking() {
   local repository_dir="$1"
-  local log_dir="$track_root/logs"
-  local log_file="$log_dir/${track_owner}-${track_repository}.log"
   local marker="# apolo-sdlc-track:${track_owner}/${track_repository}"
   local cron_file
   local cron_error
@@ -142,10 +140,6 @@ schedule_tracking() {
     return 0
   fi
 
-  if [[ ! -e "$log_dir" ]]; then
-    mkdir -p "$log_dir" || { track_fail "could not create monitor log directory: $log_dir"; return 1; }
-    track_created_log_dir="$log_dir"
-  fi
   cron_file="$(mktemp "${TMPDIR:-/tmp}/apolo-sdlc-cron.XXXXXX")" || { track_fail 'could not create temporary cron file'; return 1; }
   cron_error="${cron_file}.err"
 
@@ -158,7 +152,7 @@ schedule_tracking() {
     : >"$cron_file"
   fi
 
-  cron_line="*/15 * * * * $(quote_for_shell "$monitor_path") --repo $(quote_for_shell "$repository_dir") >> $(quote_for_shell "$log_file") 2>&1 $marker"
+  cron_line="*/15 * * * * $(quote_for_shell "$monitor_path") --scheduled --repo $(quote_for_shell "$repository_dir") >/dev/null 2>&1 $marker"
   if ! awk -v marker="$marker" 'index($0, marker) == 0 { print }' "$cron_file" >"${cron_file}.next"; then
     rm -f -- "$cron_file" "$cron_error" "${cron_file}.next"
     track_fail 'could not prepare crontab update'
@@ -199,7 +193,7 @@ prepare_tracking() {
       track_created_owner_dir="$owner_dir"
     fi
     track_created_repository="$repository_dir"
-    "$git_bin" clone "$track_url" "$repository_dir" || { track_fail "could not clone tracked repository: $track_url"; return 1; }
+    "$git_bin" clone --depth 1 "$track_url" "$repository_dir" || { track_fail "could not clone tracked repository: $track_url"; return 1; }
     printf 'Cloned %s to %s\n' "$track_url" "$repository_dir"
     verify_tracking_origin "$repository_dir" || return 1
   fi

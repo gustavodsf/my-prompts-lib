@@ -54,6 +54,12 @@ if grep -q '^claude ' "$log_file"; then
   fail 'dry run invoked Claude'
 fi
 
+: > "$log_file"
+PATH="$fake_bin:$PATH" MONITOR_LOG="$log_file" "$monitor" --repo "$repo_a" --state-file "$test_root/scheduled-state" --scheduled
+if [[ -s "$log_file" ]]; then
+  fail 'scheduled monitor listed work without an authorized issue'
+fi
+
 linked_state="$test_root/linked-state"
 printf '42\n' > "$test_root/external-state"
 ln -s "$test_root/external-state" "$linked_state"
