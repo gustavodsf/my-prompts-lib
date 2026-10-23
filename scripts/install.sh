@@ -31,6 +31,35 @@ require_value() {
   [[ $# -eq 2 && -n "$2" ]] || fail "missing value for $1"
 }
 
+canonicalize_directory() {
+  local requested="$1"
+  local candidate
+  local base
+  local logical_path
+  local segment
+  local suffix_path=""
+
+  [[ -n "$requested" ]] || fail 'unsafe configuration directory'
+  [[ "$requested" = /* ]] || requested="$PWD/$requested"
+  candidate="$requested"
+  [[ ! -L "$candidate" ]] || fail "configuration directory must not be a symbolic link: $1"
+  if [[ -e "$candidate" ]]; then
+    logical_path="$(cd -L "$candidate" && pwd -L)"
+    [[ "$logical_path" != "/" ]] || fail 'unsafe configuration directory'
+  fi
+
+  while [[ ! -e "$candidate" ]]; do
+    segment="$(basename "$candidate")"
+    [[ "$segment" != '.' && "$segment" != '/' ]] || fail "could not canonicalize configuration directory: $1"
+    suffix_path="/$segment$suffix_path"
+    candidate="$(dirname "$candidate")"
+  done
+
+  [[ -d "$candidate" && ! -L "$candidate" ]] || fail "configuration directory is not a directory: $1"
+  base="$(cd -P "$candidate" && pwd -P)"
+  printf '%s%s\n' "$base" "$suffix_path"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --source)
@@ -67,12 +96,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -d "$source_dir" ]] || fail "source directory does not exist: $source_dir"
-source_dir="$(cd "$source_dir" && pwd)"
+source_dir="$(cd -P "$source_dir" && pwd -P)"
+claude_dir="$(canonicalize_directory "$claude_dir")"
+codex_dir="$(canonicalize_directory "$codex_dir")"
 
 for directory in "$claude_dir" "$codex_dir"; do
-  [[ -n "$directory" && "$directory" != "/" && "$directory" != "." ]] || fail 'unsafe configuration directory'
-  [[ ! -L "$directory" ]] || fail "configuration directory must not be a symbolic link: $directory"
-  [[ ! -e "$directory" || -d "$directory" ]] || fail "configuration directory is not a directory: $directory"
+  [[ "$directory" != "/" ]] || fail 'unsafe configuration directory'
 done
 
 declare -a sources=(
@@ -113,6 +142,43 @@ for target in "${targets[@]}"; do
   [[ ! -e "$target" || "$replace" -eq 1 ]] || fail "managed target exists; rerun with --replace: $target"
 done
 
+declare -a created_targets=()
+declare -a backed_targets=()
+declare -a backup_paths=()
+declare -a created_directories=()
+
+rollback_installation() {
+  local index
+  local target
+  local backup
+  local rollback_failed=0
+
+  for ((index = ${#created_targets[@]} - 1; index >= 0; index--)); do
+    target="${created_targets[$index]}"
+    if [[ -L "$target" ]]; then
+      rm -- "$target" || rollback_failed=1
+    else
+      rollback_failed=1
+    fi
+  done
+
+  for ((index = ${#backed_targets[@]} - 1; index >= 0; index--)); do
+    target="${backed_targets[$index]}"
+    backup="${backup_paths[$index]}"
+    if [[ ! -e "$target" && ! -L "$target" ]]; then
+      mv -- "$backup" "$target" || rollback_failed=1
+    else
+      rollback_failed=1
+    fi
+  done
+
+  for ((index = ${#created_directories[@]} - 1; index >= 0; index--)); do
+    rmdir -- "${created_directories[$index]}" 2>/dev/null || true
+  done
+
+  [[ "$rollback_failed" -eq 0 ]]
+}
+
 backup_target() {
   local target="$1"
   local timestamp
@@ -129,7 +195,9 @@ backup_target() {
   if [[ "$dry_run" -eq 1 ]]; then
     printf 'Would back up %s to %s\n' "$target" "$backup"
   else
-    mv "$target" "$backup"
+    mv -- "$target" "$backup" || return 1
+    backed_targets+=("$target")
+    backup_paths+=("$backup")
     printf 'Backed up %s to %s\n' "$target" "$backup"
   fi
 }
@@ -138,7 +206,10 @@ for directory in "$claude_dir" "$codex_dir"; do
   if [[ "$dry_run" -eq 1 ]]; then
     [[ -d "$directory" ]] || printf 'Would create directory %s\n' "$directory"
   else
-    mkdir -p "$directory"
+    if [[ ! -d "$directory" ]]; then
+      mkdir -p "$directory" || fail "could not create configuration directory: $directory"
+      created_directories+=("$directory")
+    fi
   fi
 done
 
@@ -147,13 +218,20 @@ for index in "${!targets[@]}"; do
   source_path="${target_sources[$index]}"
 
   if [[ -e "$target" ]]; then
-    backup_target "$target"
+    if ! backup_target "$target"; then
+      rollback_installation || true
+      fail "could not back up managed target: $target"
+    fi
   fi
 
   if [[ "$dry_run" -eq 1 ]]; then
     printf 'Would link %s to %s\n' "$target" "$source_path"
   else
-    ln -s "$source_path" "$target"
+    if ! ln -s "$source_path" "$target"; then
+      rollback_installation || true
+      fail "could not link managed target: $target"
+    fi
+    created_targets+=("$target")
     printf 'Linked %s to %s\n' "$target" "$source_path"
   fi
 done
