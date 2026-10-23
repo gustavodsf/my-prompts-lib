@@ -50,4 +50,14 @@ require_text "$repo_root/skills/sdlc-review/SKILL.md" '**Standalone, write nothi
 require_text "$repo_root/skills/sdlc-github-issue/SKILL.md" 'Scheduled runs stay read-only even after authorization'
 require_text "$repo_root/skills/sdlc-github-issue/SKILL.md" 'The read-only scheduled monitor (`monitor.sh`) never invokes Claude'
 
+readme="$repo_root/README.md"
+require_text "$readme" '## Autonomous lanes'
+for text in '--lanes issue,ci' '--checkout' '--owner' 'sdlc/lane-mode.md' 'lanes/deny.json' 'APOLO_SDLC_LANE' \
+  'logs/issue.log' 'last-error.log' 'without `--lanes`' 'aprovado'; do
+  require_text "$readme" "$text"
+done
+if grep -qF 'scheduled runs remain read-only: they never start Claude' "$readme"; then
+  fail 'README still says scheduled runs never start Claude without naming the read-only monitor'
+fi
+
 printf 'PASS: lane mode isolation\n'
