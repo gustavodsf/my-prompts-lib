@@ -24,7 +24,7 @@ so the lane prompt carries identity and isolation only.
 Consolidated 2026-08-27 from: Monorepo `flow-review` 2.4.0 (four-phase find/verify/sweep/
 classify, 3-state verify labels, PLAUSIBLE-by-default, removed-behaviour audit, cross-file
 trace), Anthropic's `code-review` plugin (history, prior-PR and comment-contract finders),
-Brendan Glancy's PR 3019 analysis (premise caps), and the Delivery-API strict/legacy severity
+a team analysis of a falsely blocked PR (premise caps), and the Delivery-API strict/legacy severity
 table.
 
 ## Hard rules
@@ -136,8 +136,8 @@ Two reasons it is not simpler:
   five lanes review five different states, and the agreement percentage stops meaning
   anything.
 - **`git stash create` is not sufficient — it excludes untracked files.** Measured on
-  `TECH-3823`: 11 of 50 changed paths were untracked, and they held the entire new
-  `driver-restriction` module. A snapshot without them reviews the change with its subject
+  a real 50-file feature: 11 changed paths were untracked, and they held the entire new
+  module. A snapshot without them reviews the change with its subject
   missing and would plausibly report the implementation as absent. The temporary index runs
   `git add -A`, so untracked files are in and `.gitignore` still keeps `node_modules` out.
 
@@ -175,14 +175,14 @@ not reviewed on a routine sweep:
 | Flag | Means | Why |
 |---|---|---|
 | `preexisting: true` | head commit predates the watermark | It was already open before the watchdog existed. Not its business unless asked. |
-| `debounce: still being worked` | head commit younger than 2h | Mid-development pushes land about hourly, so reviewing now reviews a state that will not merge. Measured on 3015 and 3020. |
+| `debounce: still being worked` | head commit younger than 2h | Mid-development pushes land about hourly, so reviewing now reviews a state that will not merge. Measured on real PRs. |
 | `stale: true` | no commit in 30+ days | Backstop for anything the watermark lets through. |
 
 Name the deferred ones in your report with their reason and age. They are skipped, not
 hidden.
 
-Review-response pushes land days apart, so the 2h window never touches them — PR 2995's
-cycle is unaffected. Commit cadence separates active work from review response by itself.
+Review-response pushes land days apart, so the 2h window never touches them — a multi-day
+review cycle is unaffected. Commit cadence separates active work from review response by itself.
 
 `$ARGUMENTS` overrides the scan:
 - a number (`3011`) — that PR only, even if already reviewed
@@ -253,11 +253,11 @@ Then call, with the ID straight from `meta.json` — custom IDs work directly:
 
 ```
 clickup_get_task
-  task_id: "TECH-6306"
+  task_id: "PROJ-1234"
   include: ["description", "checklists", "subtasks"]
 ```
 
-**Do not request `custom_fields`.** Verified on `TECH-6306`: it returns the whole field
+**Do not request `custom_fields`.** Verified on a real ticket: it returns the whole field
 *configuration* — every dropdown option in the workspace — which was roughly 80% of the
 payload and contained no requirements at all. It burns lane context for nothing.
 
@@ -265,7 +265,7 @@ payload and contained no requirements at all. It burns lane context for nothing.
 the AC checkboxes as `- [ ]`, keeps headings, and keeps code in backticks. `text_content`
 flattens all of that.
 
-**Acceptance criteria live in the description, not in `checklists`.** On `TECH-6306`,
+**Acceptance criteria live in the description, not in `checklists`.** On a real ticket,
 `checklists` came back `[]` while three ACs sat in the description as markdown checkboxes
 under `#### Acceptance Criteria`. Read both, but do not treat an empty `checklists` array as
 "no acceptance criteria".
@@ -273,12 +273,12 @@ under `#### Acceptance Criteria`. Read both, but do not treat an empty `checklis
 Then comments:
 
 ```
-clickup_get_task_comments   task_id: "TECH-6306"
+clickup_get_task_comments   task_id: "PROJ-1234"
 ```
 
 ACs get amended in comments far more often than in the description, and a finding against a
 superseded AC wastes everyone's time. Where a comment has `reply_count > 0`, follow up with
-`clickup_get_threaded_comments`. `TECH-6306` returned `count: 0` — record that explicitly,
+`clickup_get_threaded_comments`. A ticket with no comments returns `count: 0` — record that explicitly,
 so a lane knows the ACs were not amended rather than that nobody checked.
 
 If `prep.sh` found no ticket ID, try `clickup_search` on the branch slug with
@@ -296,13 +296,13 @@ works unattended, no browser needed. Chrome needs the user's logged-in session, 
 be the real Chrome (`mcp__claude-in-chrome__*`), not the in-app browser.
 
 ```
-https://app.clickup.com/t/9010032869/<TICKET>
+https://app.clickup.com/t/$WATCHDOG_CLICKUP_WORKSPACE/<TICKET>
 ```
 
 Only the ticket ID at the end changes — `meta.json` already holds the full `ticketUrl`.
 
 1. `navigate` to the URL, then `get_page_text`. One call returns the whole ticket —
-   description, requirements, and the Activity feed. Verified on `TECH-6306`.
+   description, requirements, and the Activity feed.
 2. `get_page_text` returns the app chrome too. The landmarks, in page order:
 
    | Section | Starts after | Ends before |
@@ -315,7 +315,7 @@ Only the ticket ID at the end changes — `meta.json` already holds the full `ti
    | Comments | `Activity` | `Comment` |
 
    ACs are one per line under that heading, unbulleted in the text extract. Capture the
-   Engineering Notes too — `TECH-6306` puts explicit out-of-scope items there, which is
+   Engineering Notes too — tickets often put explicit out-of-scope items there, which is
    exactly what a lane needs to judge scope creep.
 3. Checklist items render as checkboxes and appear in the extract. `Create checklist` with
    nothing after it means the ticket has none — do not report an empty checklist as an AC.
@@ -347,7 +347,7 @@ mutates: no status dropdowns, no assignee changes, no comment box.
 ```markdown
 ---
 ticket: TECH-####
-url: https://app.clickup.com/t/9010032869/TECH-####
+url: https://app.clickup.com/t/<workspace>/TECH-####
 status: <clickup status>
 fetched: <UTC timestamp>
 source: clickup-mcp | clickup-chrome | local-spec | UNAVAILABLE
@@ -400,7 +400,7 @@ across five samples, and Fable's cost does not buy more of it. Fable is for the 
 only, where one call on roughly 5% of the run's tokens does the hardest judgement.
 
 **Before you send the spawn message, check every call has `model: "opus"` typed on it.**
-(Brendan Glancy found the inheritance behaviour; the standup burn confirmed it.)
+(Model inheritance from the session was observed in practice and confirmed by a costly run.)
 
 Prompts must be byte-identical apart from the lane letter. Do not seed a lane with a hint,
 do not tell one lane what another found, do not run them sequentially. Independence is the
@@ -467,14 +467,14 @@ reads as a score out of five and gets misread as a severity.
 that actually runs, a table holding rows — is capped at **60% regardless of lane agreement**
 and can never produce `Blocked`. Five lanes making the same unverifiable inference is one
 guess counted five times, not five confirmations. This is not theoretical: it produced a
-false `Blocked` on PR 3019. A regression claim with no citation of prior behaviour counts as
+false `Blocked` on a real PR. A regression claim with no citation of prior behaviour counts as
 premise-derived. See `reconciler-prompt.md`.
 
 **Absent evidence blocks.** If `ci-signal.json` shows a must-run gate skipped — **Build** or
 **the test matrix** — the verdict is `Blocked — no CI evidence`, regardless of findings.
 Conditional gates that skip by design (`Run Migrations` with no migrations, CDK with no infra
-change) do not count. Calibrated on PR 3019 (Build + tests skipped: blocks) against 3015 and
-3020 (only `Run Migrations` skipped: does not block).
+change) do not count. Calibrated on real PRs: Build + tests skipped blocks; only `Run Migrations` skipped
+does not block.
 
 **Verdict** — apply the standard's Phase 4 order to findings at 80% or better:
 
@@ -568,7 +568,7 @@ If `verdict` says `PIPELINE SUSPECT`, put it at the top of your report to the us
 the PR findings. A watchdog gating `test` on a pipeline that proves nothing is the more
 serious problem.
 
-Measured 2026-08-26: PR 3019 skipped 5 of 5 gates, while 3015 and 3020 skipped 0–1 of 14.
+Measured 2026-08-26: one PR skipped 5 of 5 gates, while two others skipped 0–1 of 14.
 So the failure is intermittent, not constant — consistent with a label race at gate
 evaluation time rather than a permanently broken workflow.
 

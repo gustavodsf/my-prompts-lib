@@ -17,7 +17,7 @@ Use [../../sdlc/templates/plan.md](../../sdlc/templates/plan.md) as the local st
 
 ## Ticket
 
-Resolve the task from the argument or the branch name (`TECH-6053-...` → `TECH-6053`); if neither yields a valid `<PROJECT>-<NUMBER>` or issue number, ask the user. Fetch the summary, status, and acceptance criteria through the ClickUp or Jira integration once, and reuse them for planning, QA, and review. Warn when the ticket is already done or closed. Without an integration, ask the user to paste the criteria; never guess them from the branch or pull request.
+Resolve the task from the argument or the branch name (`PROJ-1234-...` → `PROJ-1234`); if neither yields a valid `<PROJECT>-<NUMBER>` or issue number, ask the user. Fetch the summary, status, and acceptance criteria through the ClickUp or Jira integration once, and reuse them for planning, QA, and review. Warn when the ticket is already done or closed. Without an integration, ask the user to paste the criteria; never guess them from the branch or pull request.
 
 ## Plan contents
 

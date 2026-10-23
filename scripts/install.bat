@@ -69,6 +69,8 @@ call :validate_root "%CODEX_DIR%" || exit /b 1
 
 call :validate_root "%CLAUDE_DIR%\skills" || exit /b 1
 call :validate_root "%CODEX_DIR%\skills" || exit /b 1
+call :validate_root "%CLAUDE_DIR%\skills-backup" || exit /b 1
+call :validate_root "%CODEX_DIR%\skills-backup" || exit /b 1
 for %%R in ("%CLAUDE_DIR%" "%CODEX_DIR%") do (
   call :preflight "%%~R\sdlc" || exit /b 1
   for /d %%S in ("%SOURCE%\skills\*") do (

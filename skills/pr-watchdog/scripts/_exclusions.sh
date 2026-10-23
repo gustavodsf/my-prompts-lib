@@ -5,7 +5,7 @@
 #   Reviewing it reviews the generator, not the author.
 #   Lockfiles and snapshots are machine-written; a human did not choose those bytes.
 #
-# Measured 2026-08-28 on TECH-3823: prisma/generated was 5,652 of 9,611 diff lines -- 59% of
+# Measured 2026-08-28 on a real feature: prisma/generated was 5,652 of 9,611 diff lines -- 59% of
 # the change, and every line of it derives from schema.prisma, which was in the reviewed
 # remainder. Excluding it lost no coverage and removed more than half the input.
 #

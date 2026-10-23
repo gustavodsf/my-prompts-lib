@@ -29,7 +29,7 @@ Lineage, so you know what you are editing:
   back to Delivery-API.
 - **History / prior-PR / comment-contract finders** — from Anthropic's `code-review` plugin
   (Boris Cherny), which `flow-review` and this file adopted independently.
-- **Premise caps and evidence rules** — from Brendan Glancy's analysis of PR 3019, where all
+- **Premise caps and evidence rules** — from a team analysis of a PR where all
   five lanes blocked a legitimate PR on one shared unverifiable assumption.
 
 ## Scope — establish your inputs first
@@ -45,7 +45,7 @@ lane on an open PR. The two bundle-backed callers read the right-hand column.
 |---|---|---|
 | **The diff** | `git diff origin/test...HEAD` — plus `git diff HEAD` if you have uncommitted work, and say which you reviewed. Exclude `prisma/generated`, lockfiles and build output. | `diff.patch` — generated output already excluded by `prep` |
 | Changed files | `git diff origin/test...HEAD --name-status` | `files.txt` |
-| **Acceptance criteria** | Ticket ID from the branch name (`TECH-6053/...` → `TECH-6053`). Fetch it: `ToolSearch` for `+clickup get_task`, then `clickup_get_task` with `include: ["description","checklists","subtasks"]` — use `markdown_description`, and note ACs sit in the description as `- [ ]`, not in `checklists`. No ticket ID → say so and score spec compliance `Unverified`. | `ticket.md`, already fetched |
+| **Acceptance criteria** | Ticket ID from the branch name (`PROJ-1234/...` → `PROJ-1234`). Fetch it: `ToolSearch` for `+clickup get_task`, then `clickup_get_task` with `include: ["description","checklists","subtasks"]` — use `markdown_description`, and note ACs sit in the description as `- [ ]`, not in `checklists`. No ticket ID → say so and score spec compliance `Unverified`. | `ticket.md`, already fetched |
 | CI results | `gh pr checks <n>` if a PR exists; otherwise "no PR yet" | `checks.txt` |
 | Blame on replaced lines | `git blame origin/test -L<start>,<end> -- <file>` on replaced hunks only | `blame.txt` |
 | Prior PRs on these files | `git log --merges -n 20 --format='%s' -- <file>` → extract `#NNNN` → `gh pr view NNNN --comments`, cap ~3 | `prior-prs.json` |
@@ -211,7 +211,7 @@ that actually runs, a table that holds rows, a flag set in a stage.
 **A regression claim needs prior behaviour cited** — the merge-base file, the removed hunk
 lines, or the deleted spec. Without it, report what you *can* verify ("this path is
 untested", "this value is not provided anywhere in the repo") rather than "this change breaks
-X". PR 3019 was blocked by five lanes making the same unverifiable regression claim.
+X". A real PR was blocked by five lanes making the same unverifiable regression claim.
 
 ---
 

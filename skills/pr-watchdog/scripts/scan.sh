@@ -10,8 +10,8 @@ STATE="$WS/state.json"
 LIMIT="${WATCHDOG_LIMIT:-30}"
 
 # Skip PRs still being actively written. Measured 2026-08-26: PRs mid-development push about
-# hourly (3015, 3020), so every intermediate state drew a full five-lane review and none of
-# those states merged. PRs responding to review feedback push days apart (2995) and this
+# hourly on real PRs, so every intermediate state drew a full five-lane review and none of
+# those states merged. PRs responding to review feedback push days apart and this
 # window never touches them -- commit cadence separates the two cases by itself.
 DEBOUNCE_HOURS="${WATCHDOG_DEBOUNCE_HOURS:-2}"
 

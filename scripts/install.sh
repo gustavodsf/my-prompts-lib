@@ -398,6 +398,8 @@ for directory in "$claude_dir" "$codex_dir"; do
   # A whole-directory link from older installs would place per-skill links inside the source clone.
   [[ ! -L "$directory/skills" ]] || fail "skills directory is a symbolic link from an older install; remove it and rerun: $directory/skills"
   [[ ! -e "$directory/skills" || -d "$directory/skills" ]] || fail "skills path is not a directory: $directory/skills"
+  [[ ! -L "$directory/skills-backup" ]] || fail "skills-backup directory must not be a symbolic link: $directory/skills-backup"
+  [[ ! -e "$directory/skills-backup" || -d "$directory/skills-backup" ]] || fail "skills-backup path is not a directory: $directory/skills-backup"
   targets+=("$directory/sdlc")
   target_sources+=("$source_dir/sdlc")
   for skill_name in "${skill_names[@]}"; do

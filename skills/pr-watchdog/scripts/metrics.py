@@ -82,7 +82,7 @@ def main():
     if len(sys.argv) < 2:
         sys.exit("usage: metrics.py <outDir> [subagents-glob]")
     out_dir = sys.argv[1].rstrip('/')
-    tail = '/'.join(out_dir.split('/')[-2:])          # PR-3020/bab8be13a0aa
+    tail = '/'.join(out_dir.split('/')[-2:])          # PR-1234/<sha>
     pattern = sys.argv[2] if len(sys.argv) > 2 else \
         os.path.expanduser('~/.claude/projects/*/*/subagents/agent-*.jsonl')
 

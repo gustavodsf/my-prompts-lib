@@ -13,7 +13,7 @@ REPO="${WATCHDOG_REPO:-$HOME/dev/Delivery-API}"
 BASE="${WATCHDOG_BASE:-test}"
 MAX_PRIOR="${WATCHDOG_MAX_PRIOR_PRS:-6}"
 # Blame scales with (files x changed lines) and is injected into all five lanes, so it is the
-# one input that can silently dwarf the diff. Measured 2026-08-26: PR 3020 (81 files)
+# one input that can silently dwarf the diff. Measured 2026-08-26: an 81-file PR
 # produced 367k chars = ~92k tokens per lane, ~460k across five. Capped, and what gets
 # dropped is always stated -- a truncated file that claims to be complete is worse than none.
 MAX_BLAME_CHARS="${WATCHDOG_MAX_BLAME_CHARS:-48000}"
@@ -28,7 +28,7 @@ FILES=$(awk '$1 != "D" {print $2}' "$OUT/files.txt" | grep -vE '\.(lock|snap)$|^
 BLAME_FILES=$(printf '%s\n' $FILES | grep -vE '(__tests__/|\.spec\.|\.test\.|/generated/)' || true)
 # Guard FIRST. With FILES empty, `grep -c .` prints 0 *and* exits 1, so `|| echo 0` appends a
 # second 0 and the arithmetic below sees "0\n0" -- a syntax error that leaves the variable
-# unset for `set -u` to kill on first use. (Brendan Glancy)
+# unset for `set -u` to kill on first use.
 [ -n "$FILES" ] || { echo '{"skipped":"no files"}'; exit 0; }
 BLAME_SKIPPED_TESTS=$(( $(printf '%s\n' $FILES | grep -c . || echo 0) - $(printf '%s\n' $BLAME_FILES | grep -c . || echo 0) ))
 

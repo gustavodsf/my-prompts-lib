@@ -143,7 +143,7 @@ Lanes cannot reach AWS, the databases, or CI logs. So when a finding rests on a 
 of them could check, all five make the *same* inference and it arrives looking like unanimous
 verification. It is not. It is one guess counted five times.
 
-This produced a false `Blocked` on PR 3019: every lane assumed `fetchFromSSM: false` broke two
+This produced a false `Blocked` on a real PR: every lane assumed a configuration flag broke two
 live assertions, when the value was never provisioned to that environment and the assertions
 had never run.
 

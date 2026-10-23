@@ -7,7 +7,7 @@
 # Exporting GH_TOKEN takes precedence over the stored active account, so this process is
 # immune to a concurrent flip and, unlike `gh auth switch`, inflicts none on anybody else.
 #
-# From Brendan Glancy's build. Kept verbatim in intent; the default is generalised so the
+# From an earlier team build. Kept verbatim in intent; the default is generalised so the
 # skill ships without one person's login baked in -- it resolves whoever is active at startup
 # and pins that, which is still immune to a mid-run flip.
 GH_ACCOUNT="${WATCHDOG_GH_ACCOUNT:-}"

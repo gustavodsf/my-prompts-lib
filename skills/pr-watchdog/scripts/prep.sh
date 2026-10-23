@@ -134,7 +134,7 @@ cp -R "$REVIEW_SKILL" "$OUT/review"
 
 # The reconciler is told to follow an output format; give it a real path to one. Keeping the
 # templates in a file rather than in SKILL.md also stops SKILL.md growing every time the
-# output changes. (Brendan Glancy)
+# output changes.
 [ -f "$SKILLDIR/output-format.md" ] || die "output-format.md missing from $SKILLDIR"
 cp "$SKILLDIR/output-format.md" "$OUT/format.md"
 
@@ -163,7 +163,7 @@ jq -n --arg pr "$PR" --arg sha "$SHA" --arg short "$SHORT" --arg wt "$WT" \
       --argjson excluded "$(wc -l < "$OUT/files-excluded.txt" | tr -d ' ')" \
       --arg ticket "$TICKET" --arg spec "$SPEC" --arg prev "$PREV_SHA" \
       --arg ghAccount "$GH_ACCOUNT" \
-      --arg url "${TICKET:+https://app.clickup.com/t/9010032869/$TICKET}" \
+      --arg url "${TICKET:+${WATCHDOG_CLICKUP_WORKSPACE:+https://app.clickup.com/t/$WATCHDOG_CLICKUP_WORKSPACE/$TICKET}}" \
   '{pr:$pr,sha:$sha,short:$short,worktree:$wt,outDir:$out,mergeBase:$mb,base:$base,
     diffLines:$lines,changedFiles:$files,fullDiffLines:$fullLines,fullChangedFiles:$fullFiles,excludedFiles:$excluded,ticket:$ticket,ticketUrl:$url,localSpec:$spec,
     previousSha:$prev, ghAccount:$ghAccount}' \

@@ -84,6 +84,18 @@ assert_file_content "$claude_dir/skills/synced/SKILL.md" 'synced skill'
 assert_file_content "$claude_dir/CLAUDE.md" 'personal claude rules'
 assert_file_content "$codex_dir/AGENTS.md" 'personal codex rules'
 
+linked_backup_dir="$test_root/linked-backup-claude"
+outside_backup_dir="$test_root/outside-backup"
+mkdir -p "$linked_backup_dir/skills/example" "$outside_backup_dir"
+printf 'kept skill\n' > "$linked_backup_dir/skills/example/SKILL.md"
+ln -s "$outside_backup_dir" "$linked_backup_dir/skills-backup"
+if "$installer" --source "$source_root" --claude-dir "$linked_backup_dir" --codex-dir "$test_root/linked-backup-codex" --replace 2>"$test_root/linked-backup.out"; then
+  fail 'installer accepted a skills-backup directory that is a symbolic link'
+fi
+assert_file_content "$linked_backup_dir/skills/example/SKILL.md" 'kept skill'
+[[ -z "$(ls -A "$outside_backup_dir")" ]] || fail 'installer moved a skill backup outside the configuration directory'
+grep -F 'skills-backup' "$test_root/linked-backup.out" >/dev/null || fail 'linked skills-backup refusal was not explained'
+
 legacy_claude_dir="$test_root/legacy-claude"
 mkdir -p "$legacy_claude_dir"
 ln -s "$source_root/skills" "$legacy_claude_dir/skills"

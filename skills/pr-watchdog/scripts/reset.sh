@@ -8,7 +8,6 @@ STATE="$WS/state.json"
 if [ $# -eq 0 ]; then
   # Keep _watermark. Wiping it makes the next scan re-stamp it to now, which marks every open
   # PR as predating the watchdog and defers all of them -- a reset would disable the tool.
-  # (Brendan Glancy)
   if jq -e 'has("_watermark")' "$STATE" >/dev/null 2>&1; then
     jq '{_watermark}' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
   else

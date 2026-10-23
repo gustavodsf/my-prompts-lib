@@ -70,7 +70,7 @@ Not written from scratch. Assembled from work that already existed and was alrea
   travel back to Delivery-API; this is that.
 - **Anthropic's `code-review` plugin** (Boris Cherny) — the history, prior-PR and
   comment-contract finders, and the false-positive list.
-- **Brendan Glancy** — the analysis of PR 3019, which produced the premise caps, plus seven
+- **Team incident analysis** — of a PR blocked on one shared unverifiable premise, which produced the premise caps, plus seven
   error-handling fixes including a silent-corruption path where a `gh` failure wrote its error
   message into the file lanes read as CI results.
 - **Delivery-API `review` / `review-pr`** — the strict/legacy module severity model.
@@ -105,6 +105,12 @@ at `~/dev/Delivery-API`. Otherwise export overrides in your shell profile:
 ```bash
 export WATCHDOG_REPO="$HOME/code/Delivery-API"
 export WATCHDOG_WS="$HOME/code/.pr-watchdog"
+```
+
+Set your ClickUp workspace ID so ticket links in the bundle and the Chrome fallback resolve:
+
+```bash
+export WATCHDOG_CLICKUP_WORKSPACE=<your-workspace-id>
 ```
 
 Requires `gh` (authenticated), `jq`, and `git`. Nothing else — no `npm install`.

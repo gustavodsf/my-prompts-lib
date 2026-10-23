@@ -13,10 +13,10 @@ LOG="$WS/ci-signal.json"
 # Two tiers, because not every skip is a problem.
 #   GATE_RE   -- anything that produces evidence. Tracked for the streak.
 #   MUST_RE   -- Build and the test matrix. If these skip, nothing proved the code works.
-# Calibrated 2026-08-26: PR 3015 skipped only "Run Migrations" (conditional by design, no
-# migrations in the diff) while PR 3019 skipped Build AND tests. Only the second is
+# Calibrated 2026-08-26: one PR skipped only "Run Migrations" (conditional by design, no
+# migrations in the diff) while another skipped Build AND tests. Only the second is
 # pathological, so a blanket "any skip" rule would cry wolf on every PR.
-# Unanchored on purpose (Brendan Glancy): '^build$' matched the job named exactly "Build" and
+# Unanchored on purpose: '^build$' matched the job named exactly "Build" and
 # nothing else, so a matrix rename to "Build / build" or "build (api)" would skip undetected
 # and blocksOnEvidence would stay false. The `test` half was never anchored, so the anchor
 # bought nothing and cost a silent failure.

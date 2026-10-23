@@ -18,7 +18,7 @@ set -euo pipefail
 # Target resolution, in order: --worktree, then the CURRENT directory's worktree, then
 # WATCHDOG_REPO. It must default to cwd, not to a configured path: with several tickets in
 # flight as separate worktrees, a fixed default silently reviews the wrong branch's work.
-# Measured on this machine: Delivery-API-TECH-5766 is a worktree of Delivery-API carrying 84
+# Measured on this machine: Delivery-API-PROJ-1234 is a worktree of Delivery-API carrying 84
 # dirty paths on a different ticket.
 TARGET=""
 BASE_ARG=""
@@ -139,7 +139,7 @@ cp -R "$REVIEW_SKILL" "$OUT/review"
 
 # The reconciler is told to follow an output format; give it a real path to one. Keeping the
 # templates in a file rather than in SKILL.md also stops SKILL.md growing every time the
-# output changes. (Brendan Glancy)
+# output changes.
 [ -f "$SKILLDIR/output-format.md" ] || die "output-format.md missing from $SKILLDIR"
 cp "$SKILLDIR/output-format.md" "$OUT/format.md"
 
@@ -147,7 +147,7 @@ TICKET=$(printf '%s' "$BRANCH" | grep -oE 'TECH-[0-9]+' | head -1 || true)
 
 jq -n --arg branch "$BRANCH" --arg sha "$SHA" --arg short "$SHORT" --arg wt "$WT" \
       --arg out "$OUT" --arg mb "$MB" --arg base "$BASE" --arg ticket "$TICKET" \
-      --arg url "${TICKET:+https://app.clickup.com/t/9010032869/$TICKET}" \
+      --arg url "${TICKET:+${WATCHDOG_CLICKUP_WORKSPACE:+https://app.clickup.com/t/$WATCHDOG_CLICKUP_WORKSPACE/$TICKET}}" \
       --argjson lines "$(wc -l < "$OUT/diff.patch")" \
       --argjson files "$(wc -l < "$OUT/files.txt")" \
       --argjson fullLines "${FULL_LINES:-0}" --argjson fullFiles "${FULL_FILES:-0}" \
