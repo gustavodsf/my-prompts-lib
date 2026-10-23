@@ -183,6 +183,7 @@ printf '%s\n' \
   '  [[ "${TRACK_FAIL_CLONE:-0}" != "1" ]] || exit 1' \
   '  repository_dir="${!#}"' \
   '  track_url="${@: -2:1}"' \
+  '  [[ -z "${TRACK_CLONE_HOOK:-}" ]] || mkdir -m 777 "$TRACK_CLONE_HOOK"' \
   '  mkdir -p "$repository_dir/.git"' \
   '  printf "%s\\n" "${TRACK_CLONE_ORIGIN:-$track_url}" > "$repository_dir/.git/origin-url"' \
   '  exit 0' \
@@ -383,5 +384,21 @@ if run_track https://github.com/openclone/demo --claude-dir "$test_root/openclon
   fail 'track mode accepted an existing clone writable by other users'
 fi
 [[ "$(grep -Fc '# apolo-sdlc-track:openclone/demo' "$cron_file")" == 0 ]] || fail 'shared existing clone changed the crontab'
+
+open_track_root="$test_root/open-track-root"
+open_track_log="$test_root/open-track-root-git.log"
+mkdir "$open_track_root"
+chmod 777 "$open_track_root"
+if TRACK_GIT_LOG="$open_track_log" run_track https://github.com/openroot/demo --claude-dir "$test_root/openroot-claude" --codex-dir "$test_root/openroot-codex" --track-root "$open_track_root"; then
+  fail 'track mode accepted an existing track root writable by other users'
+fi
+if grep -F 'git clone' "$open_track_log" >/dev/null 2>&1; then
+  fail 'track mode cloned before verifying the track root'
+fi
+
+if TRACK_CLONE_HOOK="$sticky_share/late" XDG_DATA_HOME="$sticky_share/late/data" run_track https://github.com/late/demo --claude-dir "$test_root/late-claude" --codex-dir "$test_root/late-codex" --track-root "$test_root/late-tracks"; then
+  fail 'track mode installed a runner under a directory created by another user during the run'
+fi
+[[ "$(grep -Fc '# apolo-sdlc-track:late/demo' "$cron_file")" == 0 ]] || fail 'late shared directory changed the crontab'
 
 printf 'PASS: installer behavior\n'

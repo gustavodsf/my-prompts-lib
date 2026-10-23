@@ -172,6 +172,14 @@ has_trusted_ancestors() {
   done
 }
 
+require_private_directories() {
+  local directory
+
+  for directory in "$@"; do
+    is_private_directory "$directory" || { track_fail "tracked directory must be a private directory owned by the current user: $directory"; return 1; }
+  done
+}
+
 create_tracking_tree() {
   local status=0
 
@@ -196,6 +204,7 @@ install_runner() {
   [[ -x "$monitor_path" ]] || { track_fail "monitor is not executable: $monitor_path"; return 1; }
 
   create_tracking_tree "$runner_dir" || { track_fail "could not create runner directory: $runner_dir"; return 1; }
+  has_trusted_ancestors "$runner_root" || { track_fail "runner root has an ancestor writable by other users: $runner_root"; return 1; }
   for directory in "$runner_root" "$(dirname "$runner_dir")" "$runner_dir"; do
     is_private_directory "$directory" || { track_fail "runner directory must be a private directory owned by the current user: $directory"; return 1; }
   done
@@ -269,32 +278,28 @@ schedule_tracking() {
 prepare_tracking() {
   local repository_dir="$track_root/${track_owner}/${track_repository}"
   local owner_dir="$track_root/${track_owner}"
-  local directory
 
   has_trusted_ancestors "$track_root" || { track_fail "track root has an ancestor writable by other users: $track_root"; return 1; }
   has_trusted_ancestors "$runner_root" || { track_fail "runner root has an ancestor writable by other users: $runner_root"; return 1; }
 
   if [[ -e "$repository_dir" || -L "$repository_dir" ]]; then
     [[ -d "$repository_dir" && ! -L "$repository_dir" ]] || { track_fail "tracked repository path is not a directory: $repository_dir"; return 1; }
+    require_private_directories "$track_root" "$owner_dir" "$repository_dir" || return 1
     "$git_bin" -C "$repository_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { track_fail "tracked repository is not a Git worktree: $repository_dir"; return 1; }
     verify_tracking_origin "$repository_dir" || return 1
   elif [[ "$dry_run" -eq 1 ]]; then
     printf 'Would clone %s to %s\n' "$track_url" "$repository_dir"
   else
+    # Verify after creation so neither the clone nor a rollback rm -rf can follow a path another user controls.
     create_tracking_tree "$owner_dir" || { track_fail "could not create tracked repository directory: $owner_dir"; return 1; }
+    has_trusted_ancestors "$owner_dir" || { track_fail "track root has an ancestor writable by other users: $track_root"; return 1; }
+    require_private_directories "$track_root" "$owner_dir" || return 1
     track_created_repository="$repository_dir"
     "$git_bin" clone --depth 1 "$track_url" "$repository_dir" || { track_fail "could not clone tracked repository: $track_url"; return 1; }
     chmod 700 "$repository_dir" || { track_fail "could not restrict tracked repository: $repository_dir"; return 1; }
     printf 'Cloned %s to %s\n' "$track_url" "$repository_dir"
     verify_tracking_origin "$repository_dir" || return 1
   fi
-
-  for directory in "$track_root" "$owner_dir" "$repository_dir"; do
-    if [[ -e "$directory" ]] && ! is_private_directory "$directory"; then
-      track_fail "tracked directory must be a private directory owned by the current user: $directory"
-      return 1
-    fi
-  done
 
   schedule_tracking "$repository_dir"
 }
