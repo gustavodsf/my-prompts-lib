@@ -8,6 +8,8 @@ argument-hint: "[issue number]"
 
 Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](../../sdlc/error.md).
 
+Only in lane mode (see [../../sdlc/lane-mode.md](../../sdlc/lane-mode.md) for when it is active), also apply that file; in every other session ignore it.
+
 Monitor issues and pull requests without writing by default. Multiple candidate issues may exist. Scheduled runs stay read-only even after authorization; start interactive work only after explicit `vamos trabalhar <issue-number>` authorization has been recorded in durable local state.
 
 For an authorized issue:
@@ -20,4 +22,4 @@ For an authorized issue:
 
 Persist the authorization and issue number so a monitor restart cannot advance another issue. Keep generated task Markdown under `project-doc/<issue-number>/` and out of commits.
 
-The scheduled monitor never invokes Claude, `curl`, AWS, GitHub writes, `git push`, or a write wrapper. Run API evidence in a visible terminal and make GitHub writes only during the separately approved interactive workflow. Never create, update, delete, or mutate AWS resources.
+The read-only scheduled monitor (`monitor.sh`) never invokes Claude, `curl`, AWS, GitHub writes, `git push`, or a write wrapper. Run API evidence in a visible terminal and make GitHub writes only during the separately approved interactive workflow. Never create, update, delete, or mutate AWS resources.

@@ -11,6 +11,10 @@ Choose one mode before planning:
 
 After GitHub authorization, use the issue number in the branch, local documents, issue comments, and pull request. Run the authorized lifecycle through planning, implementation, validation, review, and pull request creation. Update the issue with the execution plan, material progress, blockers, sanitized validation summaries, and the pull request link. Do not act on another issue after a restart unless its authorization is still recorded.
 
+## Lane mode
+
+An autonomous lane started by the monitor's lane runner runs in lane mode, defined in [lane-mode.md](lane-mode.md). It is active only when the lane runner set `APOLO_SDLC_LANE` and the prompt is a lane prompt. Guided mode and the interactive GitHub mode above never use it; in those sessions ignore `lane-mode.md`.
+
 ## Project context
 
 On the first interaction with a project, inspect its instructions and create local `architecture.md`, `back-end.md`, and `front-end.md` before detailed planning. The front-end context must identify the existing design system. Reuse its components, tokens, typography, spacing, colors, and accessibility patterns. Record a missing design system as a risk; do not invent one silently.

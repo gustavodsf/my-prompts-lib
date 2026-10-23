@@ -8,6 +8,8 @@ argument-hint: "[open | feedback] [task identifier, issue number, or PR number]"
 
 Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](../../sdlc/error.md). Push, create, or comment on a pull request only when the user explicitly asks in the current task. Never force-push, rebase, amend, or squash without an explicit request.
 
+Only in lane mode (see [../../sdlc/lane-mode.md](../../sdlc/lane-mode.md) for when it is active), also apply that file; in every other session ignore it.
+
 ## Open
 
 Preconditions: all approved tasks are committed, required checks pass, and the `sdlc-review` record has an approved disposition for every finding. Verify `gh auth status`, the feature branch, and the base branch recorded for the task.

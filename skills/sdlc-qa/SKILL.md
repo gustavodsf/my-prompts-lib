@@ -8,6 +8,8 @@ argument-hint: "[task identifier or issue number]"
 
 Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](../../sdlc/error.md).
 
+Only in lane mode (see [../../sdlc/lane-mode.md](../../sdlc/lane-mode.md) for when it is active), also apply that file; in every other session ignore it.
+
 Create local QA cases from the approved plan and store them under `project-doc/<task-or-issue-id>/`. Use synthetic data and state which environment is used.
 
 ## Validation surface
