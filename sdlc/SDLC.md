@@ -6,10 +6,10 @@ Use this workflow for implementation work. Follow repository instructions when t
 
 Choose one mode before planning:
 
-- **Guided mode:** the user supplies a ClickUp or Jira task. Keep task documents under `project-doc/<task-id>/` and wait at the agreed decision gates.
-- **GitHub mode:** work belongs to a GitHub issue. Monitor issues and pull requests without writing. Start only after the user says `vamos trabalhar <issue-number>`. Then use that number in the branch, local documents, issue comments, and pull request.
+- **Guided mode:** the user supplies a ClickUp or Jira task. Keep task documents under `project-doc/<task-id>/` and wait at the agreed decision gates. Do not access AWS in this mode.
+- **GitHub mode:** work belongs to a GitHub issue. Monitor issues and pull requests without writing. Start only after the user says `vamos trabalhar <issue-number>`.
 
-In GitHub mode, update the issue with the execution plan, material progress, blockers, validation summaries, and the pull request link. Do not act on another issue after a restart unless its authorization is still recorded.
+After GitHub authorization, use the issue number in the branch, local documents, issue comments, and pull request. Run the authorized lifecycle through planning, implementation, validation, review, and pull request creation. Update the issue with the execution plan, material progress, blockers, sanitized validation summaries, and the pull request link. Do not act on another issue after a restart unless its authorization is still recorded.
 
 ## Project context
 
@@ -17,13 +17,13 @@ On the first interaction with a project, inspect its instructions and create loc
 
 ## Planning and evidence
 
-Use one `plan.md` per task or issue. Keep local plan, QA, evidence, and review Markdown out of commits. `README.md` is the sole Markdown exception.
+Use one `plan.md` per task or issue. Keep task-generated plan, QA, evidence, review, and context Markdown out of commits. Versioned configuration under `sdlc/` and `README.md` may be committed.
 
 - API work uses `curl` or an equivalent HTTP client with synthetic data. Record the command, status, and sanitized response.
 - UI/E2E work uses the visible front end as the primary evidence. Capture relevant screenshots and console/network results.
 - Keep an `evidence.md` index. Remove secrets, cookies, authorization headers, personal data, and internal-only values before displaying or posting evidence.
 
-AWS access is prohibited in guided mode. In GitHub mode, an authorized automated issue flow may perform AWS read-only inspection when needed. It must never create, update, or delete AWS resources.
+In GitHub mode, an authorized automated issue flow may perform AWS read-only inspection when needed. It must never create, update, or delete AWS resources. Never publish AWS credentials, account identifiers, internal endpoints, or unredacted results.
 
 ## Quality and review
 
