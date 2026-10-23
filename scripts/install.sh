@@ -25,7 +25,7 @@ usage() {
 Usage: scripts/install.sh [--local | --track GITHUB_URL] [options]
 
 Options:
-  --local             Link the shared configuration into Claude and Codex.
+  --local             Link the shared sdlc rules and each skill into Claude and Codex.
   --track GITHUB_URL  Link local configuration, clone the GitHub project, and add a
                       15-minute read-only monitor cron entry.
   --source PATH       Source clone to link from.
@@ -383,38 +383,28 @@ for directory in "$claude_dir" "$codex_dir"; do
   [[ "$directory" != "/" ]] || fail 'unsafe configuration directory'
 done
 
-declare -a sources=(
-  "$source_dir/CLAUDE.md"
-  "$source_dir/AGENTS.md"
-  "$source_dir/sdlc"
-  "$source_dir/commands"
-  "$source_dir/skills"
-)
-
-for source_path in "${sources[@]}"; do
-  [[ -e "$source_path" ]] || fail "managed source does not exist: $source_path"
+[[ -d "$source_dir/sdlc" ]] || fail "managed source does not exist: $source_dir/sdlc"
+declare -a skill_names=()
+for skill_path in "$source_dir"/skills/*/; do
+  [[ -f "${skill_path}SKILL.md" ]] || continue
+  skill_name="$(basename "$skill_path")"
+  skill_names+=("$skill_name")
 done
+[[ "${#skill_names[@]}" -gt 0 ]] || fail "no skills found in $source_dir/skills"
 
-declare -a target_sources=(
-  "$source_dir/CLAUDE.md"
-  "$source_dir/sdlc"
-  "$source_dir/commands"
-  "$source_dir/skills"
-  "$source_dir/AGENTS.md"
-  "$source_dir/sdlc"
-  "$source_dir/commands"
-  "$source_dir/skills"
-)
-declare -a targets=(
-  "$claude_dir/CLAUDE.md"
-  "$claude_dir/sdlc"
-  "$claude_dir/commands"
-  "$claude_dir/skills"
-  "$codex_dir/AGENTS.md"
-  "$codex_dir/sdlc"
-  "$codex_dir/commands"
-  "$codex_dir/skills"
-)
+declare -a target_sources=()
+declare -a targets=()
+for directory in "$claude_dir" "$codex_dir"; do
+  # A whole-directory link from older installs would place per-skill links inside the source clone.
+  [[ ! -L "$directory/skills" ]] || fail "skills directory is a symbolic link from an older install; remove it and rerun: $directory/skills"
+  [[ ! -e "$directory/skills" || -d "$directory/skills" ]] || fail "skills path is not a directory: $directory/skills"
+  targets+=("$directory/sdlc")
+  target_sources+=("$source_dir/sdlc")
+  for skill_name in "${skill_names[@]}"; do
+    targets+=("$directory/skills/$skill_name")
+    target_sources+=("$source_dir/skills/$skill_name")
+  done
+done
 
 for index in "${!targets[@]}"; do
   target="${targets[$index]}"
@@ -479,22 +469,31 @@ rollback_tracking() {
   [[ "$rollback_failed" -eq 0 ]]
 }
 
+# Skill backups go to a sibling skills-backup directory because a copy left in skills/ loads as a duplicate skill.
 backup_target() {
   local target="$1"
   local timestamp
+  local backup_base="$target"
   local backup
   local suffix=0
+  local status=0
 
+  if [[ "$(basename "$(dirname "$target")")" == 'skills' ]]; then
+    backup_base="$(dirname "$(dirname "$target")")/skills-backup/$(basename "$target")"
+  fi
   timestamp="$(date '+%Y%m%d-%H%M%S')"
-  backup="${target}-old-${timestamp}"
+  backup="${backup_base}-old-${timestamp}"
   while [[ -e "$backup" || -L "$backup" ]]; do
     suffix=$((suffix + 1))
-    backup="${target}-old-${timestamp}-${suffix}"
+    backup="${backup_base}-old-${timestamp}-${suffix}"
   done
 
   if [[ "$dry_run" -eq 1 ]]; then
     printf 'Would back up %s to %s\n' "$target" "$backup"
   else
+    create_directory_tree '' "$(dirname "$backup")" || status=1
+    created_directories+=(${new_dirs[@]+"${new_dirs[@]}"})
+    [[ "$status" -eq 0 ]] || return 1
     mv -- "$target" "$backup" || return 1
     backed_targets+=("$target")
     backup_paths+=("$backup")
@@ -502,7 +501,7 @@ backup_target() {
   fi
 }
 
-for directory in "$claude_dir" "$codex_dir"; do
+for directory in "$claude_dir/skills" "$codex_dir/skills"; do
   if [[ "$dry_run" -eq 1 ]]; then
     [[ -d "$directory" ]] || printf 'Would create directory %s\n' "$directory"
   else

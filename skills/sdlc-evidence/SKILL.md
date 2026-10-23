@@ -1,11 +1,14 @@
 ---
 name: sdlc-evidence
 description: Capture and index sanitized verification evidence for an approved task or authorized GitHub issue. Use when API or UI/E2E validation has produced commands, responses, logs, or screenshots.
+argument-hint: "[task identifier or issue number]"
 ---
 
 # Evidence
 
-Use `sdlc/templates/evidence.md` to create or update local `project-doc/<task-or-issue-id>/evidence.md`. Use synthetic data whenever possible.
+Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](../../sdlc/error.md).
+
+Use [../../sdlc/templates/evidence.md](../../sdlc/templates/evidence.md) to create or update local `project-doc/<task-or-issue-id>/evidence.md`. Use synthetic data whenever possible.
 
 ## Evidence selection
 

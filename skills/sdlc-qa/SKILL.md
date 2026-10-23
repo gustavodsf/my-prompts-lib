@@ -1,9 +1,12 @@
 ---
 name: sdlc-qa
 description: Plan and execute proportionate QA for an approved ClickUp/Jira task or authorized GitHub issue. Use after implementation and before final review or pull request completion.
+argument-hint: "[task identifier or issue number]"
 ---
 
 # QA
+
+Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](../../sdlc/error.md).
 
 Create local QA cases from the approved plan and store them under `project-doc/<task-or-issue-id>/`. Use synthetic data and state which environment is used.
 

@@ -1,16 +1,23 @@
 ---
 name: sdlc-plan
 description: Create or update a local execution plan for a ClickUp/Jira task or an explicitly authorized GitHub issue. Use after project context is available and before implementation.
+argument-hint: "[task identifier or issue number]"
 ---
 
 # Execution plan
 
-Use `sdlc/templates/plan.md` as the local structure. Keep the plan under `project-doc/<task-or-issue-id>/plan.md` and keep it out of commits.
+Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](../../sdlc/error.md).
+
+Use [../../sdlc/templates/plan.md](../../sdlc/templates/plan.md) as the local structure. Keep the plan under `project-doc/<task-or-issue-id>/plan.md` and keep it out of commits.
 
 ## Mode selection
 
 - **Guided mode:** require the ClickUp/Jira task identifier supplied by the user. Keep the user at business and approval gates. Do not access AWS.
 - **GitHub mode:** require an issue number and explicit `vamos trabalhar <issue-number>` authorization before writing a plan comment or changing any external state. Use the number in the branch, local documents, issue comments, and pull request.
+
+## Ticket
+
+Resolve the task from the argument or the branch name (`TECH-6053-...` → `TECH-6053`); if neither yields a valid `<PROJECT>-<NUMBER>` or issue number, ask the user. Fetch the summary, status, and acceptance criteria through the ClickUp or Jira integration once, and reuse them for planning, QA, and review. Warn when the ticket is already done or closed. Without an integration, ask the user to paste the criteria; never guess them from the branch or pull request.
 
 ## Plan contents
 

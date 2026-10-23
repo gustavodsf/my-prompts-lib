@@ -1,18 +1,19 @@
 ---
 name: pr-watchdog
 description: Watch the Delivery-API GitHub repo for new or updated pull requests, pull each PR's ClickUp ticket for its acceptance criteria, review the PR with five independent agentic lanes running the team-owned review standard, and reconcile their votes into one summary. Use when asked to run the PR watchdog, check for new PRs to review, sweep open PRs, or set up recurring PR review. Triggers on "pr watchdog", "watchdog", "check for new PRs", "review the open PRs", "sweep the PRs", "any new PRs to review".
+argument-hint: "[PR number | --local | --limit N | --all | --reset]"
 allowed-tools: Bash, Read, Write, Grep, Glob, Agent
 model: opus
-version: 2.3.0
+version: 2.4.0
 ---
 
 # PR Watchdog
 
-Five independent lanes review the same PR with the **`review/SKILL.md` standard** and against the
+Five independent lanes review the same PR with the **`sdlc-review` standard** (copied into each bundle as `review/SKILL.md`) and against the
 **acceptance criteria on its ClickUp ticket**. Four of five agreeing makes a finding
 confirmed. Fewer than that makes it a lead, not a verdict.
 
-**The review standard is `review/SKILL.md` beside this file.** One file, team-owned, and the
+**The review standard is the `sdlc-review` skill beside this one.** One file, team-owned, and the
 only place review behaviour is defined. `prep.sh` copies it into each bundle so a run always
 reviews against the version current when it started.
 
@@ -40,6 +41,40 @@ table.
   `CLAUDE.md` edits. Lanes write only their own bundle file.
 - **Never run tests, lint, or typecheck.** We cannot, so CI
   from `gh pr checks` is the signal and lanes must say so out loud.
+- **Every lane is spawned with `model: "opus"`, explicitly, on every call. No exceptions.**
+  A spawn without it inherits the calling session's model. Run this from a Fable session and
+  you get six Fable agents instead of five Opus and one Fable — several times the cost, with
+  nothing in the output to show it. **If you are about to spawn a lane and have not typed
+  `model: "opus"`, stop.**
+
+## The model contract
+
+**One table. Every spawn in this skill is covered by it, and nothing else in this file
+overrides it.**
+
+| Role | Count | Model | Set how | If it is wrong |
+|---|---|---|---|---|
+| Review lane | 5 | **`opus`** | `model: "opus"` on every Agent call | `check-panel.sh` refuses the run |
+| Reconciler | 1 | **`fable`** | `model: "fable"` on the Agent call | `check-panel.sh` refuses the run |
+| Orchestrator (you) | 1 | whatever the session is | not settable | Nothing — it does not judge |
+
+**Why five Opus and not five Fable.** The panel exists to reduce variance, and five samples
+is what does that. Fable costs several times more per token and does not buy more variance,
+so a Fable panel is the same result for multiples of the price. The agreement thresholds
+were calibrated on five Opus.
+
+**Why Fable for the reconciler.** Deciding whether two differently-worded findings are the
+same defect is the hardest judgement in the run, and it is one call on roughly 5% of the
+run's tokens. The stronger model costs almost nothing there.
+
+**Effort level cannot be pinned per spawn.** The Agent tool takes a model, not an effort.
+Spawned lanes inherit the session's effort setting, so a run started on high effort produces
+five high-effort Opus lanes. **If effort matters for a run, the operator sets it on their
+session before starting** — it is the one thing here the skill cannot control. Opus at
+medium is the intended setting.
+
+**The session model is irrelevant to the lanes.** Pin the model on each call and a Fable
+session produces a correct panel. Never switch your session to work around a block.
 
 ## Layout
 
@@ -342,22 +377,56 @@ Read `lane-prompt.md` beside this file. Substitute `{{LANE}}` (`a`–`e`), `{{PR
 `{{SHORT}}`, `{{WORKTREE}}`, `{{OUTDIR}}`, `{{BASE}}` (`test`), `{{TICKET}}`.
 
 Spawn **all five Agent calls in a single message** so they run concurrently in isolated
-contexts. Use `subagent_type: "general-purpose"` **and `model: "opus"` on every call**.
+contexts. Every call carries **both**:
 
-**The model must be explicit.** This skill's `model: opus` frontmatter applies to the
-invoking turn only — lanes spawned without a `model` inherit whatever the session is running.
-Run the watchdog from a Sonnet session and all five lanes silently become Sonnet, and the
-five-independent-Opus-judgements premise collapses with nothing in the output to show it.
-The reconciler is already pinned to Fable; the lanes need the same treatment. (Brendan Glancy)
+```
+subagent_type: "general-purpose"
+model: "opus"
+```
+
+**`model: "opus"` is not optional and has no default.** See *The model contract* above.
+
+This skill's `model: opus` frontmatter applies to the invoking turn only. A lane spawned
+without an explicit model inherits whatever the calling session is running, so the panel
+silently becomes five of whatever the user happened to be on, and nothing in the output
+says so.
+
+**Measured 2026-09-16:** two engineers ran the watchdog from Fable sessions and reported the
+usage burn at standup. Six Fable agents, not five Opus and one Fable. The panel was never
+five Opus and the reports did not say so.
+
+**Never run the lanes on Fable.** Five Opus lanes are the design: the panel needs variance
+across five samples, and Fable's cost does not buy more of it. Fable is for the reconciler
+only, where one call on roughly 5% of the run's tokens does the hardest judgement.
+
+**Before you send the spawn message, check every call has `model: "opus"` typed on it.**
+(Brendan Glancy found the inheritance behaviour; the standup burn confirmed it.)
 
 Prompts must be byte-identical apart from the lane letter. Do not seed a lane with a hint,
 do not tell one lane what another found, do not run them sequentially. Independence is the
 only thing that makes a 4-of-5 threshold mean anything.
 
+## Step 4b — Record the models that ran
+
+Write `<outDir>/models.json` immediately after spawning, before the lanes return:
+
+```json
+{ "lanes": "opus", "reconciler": "fable", "session": "<the model you are running as>",
+  "effort": "<the session effort, which the lanes inherited>" }
+```
+
+**A run whose `lanes` is anything but `opus` is not a valid five-lane review.** Say so at the
+top of your report to the user and do not present its agreement percentages as confidence —
+they describe a different panel from the one the thresholds were calibrated on.
+
+This exists because the failure is otherwise invisible: token counts per lane are recorded,
+the model behind them is not, and a four-times-cost run looks identical to a normal one until
+someone checks their weekly usage.
+
 ## Step 5 — Reconcile — on Fable, as a subagent
 
 Spawn **one** Agent with `model: "fable"` and `subagent_type: "general-purpose"`, using
-`reconciler-prompt.md` beside this file. Do not reconcile inline.
+`reconciler-prompt.md` beside this file — see *The model contract*. Do not reconcile inline.
 
 Two reasons. **Judgement is the bottleneck here** — deciding whether two differently-worded
 findings are the same defect is harder than finding them was, and it is one call on ~5% of
@@ -373,8 +442,9 @@ the earlier pass to `<outDir>/previous-summary.md`. That file goes to the **reco
 Resolved / Still stands / New, never to detect. A finding exists in this pass only if this
 pass's lanes found it.
 
-If Fable is unavailable, reconcile on the session model and say so in the report — do not
-silently downgrade.
+If Fable is unavailable, stop and tell the user rather than
+reconciling on another model — the reconciler is the one place the stronger model is worth
+its cost, and a silent downgrade there is what `check-panel.sh` exists to catch.
 
 ### What the reconciler must do
 
@@ -502,14 +572,30 @@ Measured 2026-08-26: PR 3019 skipped 5 of 5 gates, while 3015 and 3020 skipped 0
 So the failure is intermittent, not constant — consistent with a label race at gate
 evaluation time rather than a permanently broken workflow.
 
+## Step 5d — Validate the panel
+
+```bash
+~/.claude/skills/pr-watchdog/scripts/check-panel.sh <outDir>
+```
+
+Refuses a run that is not five lanes on the right models. Checks all five lane files exist
+and are non-empty, that no sixth lane appeared, and that `models.json` records `opus` lanes
+and a `fable` reconciler.
+
+**If it fails, say so at the top of your report and do not present the agreement percentages
+as confidence.** Four lanes and five lanes produce numbers that look identical and mean
+different things, and nothing in `summary.md` distinguishes them. `finish.sh` runs this too
+and will refuse to record the run.
+
 ## Step 6 — Record
 
 ```bash
 ~/.claude/skills/pr-watchdog/scripts/finish.sh <pr-number> <sha>
 ```
 
-Only after `summary.md` and `detail.md` both exist. Stamps the SHA into `state.json` and removes the worktree,
-so the next run skips this PR until someone pushes. Then loop to Step 2.
+Only after `check-panel.sh` passes and `summary.md` and `detail.md` both exist. Stamps the
+SHA into `state.json` and removes the worktree, so the next run skips this PR until someone
+pushes. Then loop to Step 2.
 
 ## Step 7 — Report
 

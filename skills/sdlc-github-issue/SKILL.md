@@ -1,9 +1,12 @@
 ---
 name: sdlc-github-issue
 description: Monitor GitHub issues and pull requests without writes, then guide the interactive lifecycle only for an explicitly authorized issue. Use for scheduled tracking or when the user says vamos trabalhar followed by an issue number.
+argument-hint: "[issue number]"
 ---
 
 # Authorized GitHub issue lifecycle
+
+Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](../../sdlc/error.md).
 
 Monitor issues and pull requests without writing by default. Multiple candidate issues may exist. Scheduled runs stay read-only even after authorization; start interactive work only after explicit `vamos trabalhar <issue-number>` authorization has been recorded in durable local state.
 

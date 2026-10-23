@@ -31,10 +31,10 @@ Write a failing test when meaningful. When it is not meaningful, obtain approval
 
 Code comments must be minimal. Add one only for a non-obvious invariant, constraint, compatibility need, security tradeoff, or performance reason.
 
-Work implemented with Claude is reviewed in Codex; work implemented with Codex is reviewed in Claude. If the opposite agent is unavailable, do not report the review as complete.
+Work implemented with Claude is reviewed in Codex; work implemented with Codex is reviewed in Claude. If the opposite agent is unavailable, do not report the review as complete. Use the `sdlc-review` skill; after corrections, run it in delta mode so follow-up reviews verify only the correction diff. Open pull requests and handle reviewer comments with `sdlc-pr`.
 
 Use `error.md` during planning, QA, and review. A repeated failure becomes an error-catalog rule with a prevention check.
 
 ## Installation behavior
 
-The managed clone is the source of truth for Claude and Codex rules, commands, skills, templates, and the error catalog. Before creating a managed link, rename an existing managed file to `<name>-old-<timestamp>` in the same directory. Refuse existing links, paths outside expected configuration directories, and unmanaged files unless explicit replacement is authorized.
+The managed clone is the source of truth for the shared skills, these rules, the templates, and the error catalog. The installer links `sdlc` and each skill individually and never manages global `CLAUDE.md`, `AGENTS.md`, or skills it does not own. Before creating a managed link, rename an existing managed file to `<name>-old-<timestamp>` in the same directory; skill backups go to the sibling `skills-backup/` directory so they never load as duplicate skills. Refuse existing links, paths outside expected configuration directories, and unmanaged files unless explicit replacement is authorized.

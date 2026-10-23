@@ -17,10 +17,10 @@ BASE="${WATCHDOG_BASE:-test}"
 # install so an engineer running the repo copy without one still resolves.
 if [ -n "${WATCHDOG_REVIEW_SKILL:-}" ]; then
   REVIEW_SKILL="$WATCHDOG_REVIEW_SKILL"
-elif [ -d "$SKILLDIR/../watchdog-review" ]; then
-  REVIEW_SKILL="$(cd "$SKILLDIR/../watchdog-review" && pwd)"
+elif [ -d "$SKILLDIR/../sdlc-review" ]; then
+  REVIEW_SKILL="$(cd "$SKILLDIR/../sdlc-review" && pwd)"
 else
-  REVIEW_SKILL="$HOME/.claude/skills/watchdog-review"
+  REVIEW_SKILL="$HOME/.claude/skills/sdlc-review"
 fi
 
 die() { echo "prep.sh: $*" >&2; exit 1; }
@@ -129,7 +129,7 @@ find "$OUT/checklist" -size 0 -delete
 
 # Copied into the bundle so a run always reviews against the version current when it started,
 # even if someone edits the skill mid-run.
-[ -d "$REVIEW_SKILL" ] || die "review standard not found at $REVIEW_SKILL -- install the watchdog-review skill"
+[ -d "$REVIEW_SKILL" ] || die "review standard not found at $REVIEW_SKILL -- install the sdlc-review skill"
 cp -R "$REVIEW_SKILL" "$OUT/review"
 
 # The reconciler is told to follow an output format; give it a real path to one. Keeping the

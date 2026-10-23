@@ -43,21 +43,19 @@ claude_dir="$test_root/claude"
 codex_dir="$test_root/codex"
 blocked_claude_dir="$test_root/blocked-claude"
 blocked_codex_dir="$test_root/blocked-codex"
-mkdir -p "$source_root/sdlc" "$source_root/commands" "$source_root/skills/example" "$source_root/scripts" "$claude_dir/commands" "$codex_dir/skills" "$blocked_claude_dir" "$blocked_codex_dir"
+mkdir -p "$source_root/sdlc" "$source_root/skills/example" "$source_root/skills/other" "$source_root/scripts" "$claude_dir/skills/example" "$claude_dir/skills/synced" "$codex_dir" "$blocked_claude_dir/skills/example" "$blocked_codex_dir"
 source_root="$(cd -P "$source_root" && pwd -P)"
-printf 'claude rules\n' > "$source_root/CLAUDE.md"
-printf 'codex rules\n' > "$source_root/AGENTS.md"
 printf 'error catalog\n' > "$source_root/sdlc/error.md"
-printf 'command\n' > "$source_root/commands/context.md"
 printf 'skill\n' > "$source_root/skills/example/SKILL.md"
+printf 'other skill\n' > "$source_root/skills/other/SKILL.md"
 printf '#!/usr/bin/env bash\n' > "$source_root/scripts/monitor.sh"
 chmod +x "$source_root/scripts/monitor.sh"
-printf 'legacy claude rules\n' > "$claude_dir/CLAUDE.md"
-printf 'legacy command\n' > "$claude_dir/commands/legacy.md"
-printf 'legacy codex rules\n' > "$codex_dir/AGENTS.md"
-printf 'legacy skill\n' > "$codex_dir/skills/legacy.md"
+printf 'legacy example skill\n' > "$claude_dir/skills/example/SKILL.md"
+printf 'synced skill\n' > "$claude_dir/skills/synced/SKILL.md"
+printf 'personal claude rules\n' > "$claude_dir/CLAUDE.md"
+printf 'personal codex rules\n' > "$codex_dir/AGENTS.md"
 
-printf 'protected claude rules\n' > "$blocked_claude_dir/CLAUDE.md"
+printf 'protected skill\n' > "$blocked_claude_dir/skills/example/SKILL.md"
 
 if "$installer" --source "$source_root" --claude-dir "$blocked_claude_dir" --codex-dir "$blocked_codex_dir"; then
   fail 'expected installer to require --replace for an existing target'
@@ -67,61 +65,67 @@ if "$installer" --source "$source_root" --claude-dir /tmp/.. --codex-dir "$block
   fail 'installer accepted a configuration directory that resolves to the filesystem root'
 fi
 
-[[ ! -L "$blocked_claude_dir/CLAUDE.md" ]] || fail 'installer replaced a target without --replace'
-[[ "$(<"$blocked_claude_dir/CLAUDE.md")" == 'protected claude rules' ]] || fail 'installer changed a target without --replace'
+[[ ! -L "$blocked_claude_dir/skills/example" ]] || fail 'installer replaced a target without --replace'
+assert_file_content "$blocked_claude_dir/skills/example/SKILL.md" 'protected skill'
 
 "$installer" --source "$source_root" --claude-dir "$claude_dir" --codex-dir "$codex_dir" --replace
 
-assert_link "$claude_dir/CLAUDE.md" "$source_root/CLAUDE.md"
-assert_link "$claude_dir/sdlc" "$source_root/sdlc"
-assert_link "$claude_dir/commands" "$source_root/commands"
-assert_link "$claude_dir/skills" "$source_root/skills"
-assert_link "$codex_dir/AGENTS.md" "$source_root/AGENTS.md"
-assert_link "$codex_dir/sdlc" "$source_root/sdlc"
-assert_link "$codex_dir/commands" "$source_root/commands"
-assert_link "$codex_dir/skills" "$source_root/skills"
-assert_backup "$claude_dir" 'CLAUDE.md'
-assert_backup "$claude_dir" 'commands'
-assert_backup "$codex_dir" 'AGENTS.md'
-assert_backup "$codex_dir" 'skills'
+for config_dir in "$claude_dir" "$codex_dir"; do
+  assert_link "$config_dir/sdlc" "$source_root/sdlc"
+  assert_link "$config_dir/skills/example" "$source_root/skills/example"
+  assert_link "$config_dir/skills/other" "$source_root/skills/other"
+  [[ ! -e "$config_dir/commands" ]] || fail 'installer still manages commands'
+done
+assert_backup "$claude_dir/skills-backup" 'example'
+if find "$claude_dir/skills" -maxdepth 1 -name 'example-old-*' -print -quit | grep -q .; then
+  fail 'installer left a skill backup where it is loaded as a duplicate skill'
+fi
+assert_file_content "$claude_dir/skills/synced/SKILL.md" 'synced skill'
+assert_file_content "$claude_dir/CLAUDE.md" 'personal claude rules'
+assert_file_content "$codex_dir/AGENTS.md" 'personal codex rules'
+
+legacy_claude_dir="$test_root/legacy-claude"
+mkdir -p "$legacy_claude_dir"
+ln -s "$source_root/skills" "$legacy_claude_dir/skills"
+if "$installer" --source "$source_root" --claude-dir "$legacy_claude_dir" --codex-dir "$test_root/legacy-codex" --replace 2>"$test_root/legacy.out"; then
+  fail 'installer accepted a legacy skills directory link'
+fi
+grep -F 'skills directory is a symbolic link' "$test_root/legacy.out" >/dev/null || fail 'legacy skills link was not explained'
+[[ ! -e "$test_root/legacy-codex" ]] || fail 'legacy skills link refusal changed Codex configuration'
 
 linked_claude_dir="$test_root/linked-claude"
 linked_codex_dir="$test_root/linked-codex"
-mkdir -p "$linked_claude_dir" "$linked_codex_dir"
-ln -s "$source_root/CLAUDE.md" "$linked_claude_dir/CLAUDE.md"
+mkdir -p "$linked_claude_dir/skills" "$linked_codex_dir"
+ln -s "$source_root/skills/example" "$linked_claude_dir/skills/example"
 
 if "$installer" --source "$source_root" --claude-dir "$linked_claude_dir" --codex-dir "$linked_codex_dir" --replace; then
   fail 'expected installer to reject an existing symbolic link'
 fi
 
-assert_link "$linked_claude_dir/CLAUDE.md" "$source_root/CLAUDE.md"
+assert_link "$linked_claude_dir/skills/example" "$source_root/skills/example"
 
 dry_claude_dir="$test_root/dry-claude"
 dry_codex_dir="$test_root/dry-codex"
-mkdir -p "$dry_claude_dir" "$dry_codex_dir"
-printf 'legacy claude rules\n' > "$dry_claude_dir/CLAUDE.md"
-printf 'legacy codex rules\n' > "$dry_codex_dir/AGENTS.md"
+mkdir -p "$dry_claude_dir/skills/example" "$dry_codex_dir"
+printf 'legacy dry skill\n' > "$dry_claude_dir/skills/example/SKILL.md"
 
 "$installer" --source "$source_root" --claude-dir "$dry_claude_dir" --codex-dir "$dry_codex_dir" --replace --dry-run
 
-[[ ! -L "$dry_claude_dir/CLAUDE.md" ]] || fail 'dry run changed Claude configuration'
-[[ ! -L "$dry_codex_dir/AGENTS.md" ]] || fail 'dry run changed Codex configuration'
-[[ ! -e "$dry_claude_dir"/CLAUDE.md-old-* ]] || fail 'dry run created a Claude backup'
-[[ ! -e "$dry_codex_dir"/AGENTS.md-old-* ]] || fail 'dry run created a Codex backup'
+[[ ! -L "$dry_claude_dir/skills/example" ]] || fail 'dry run changed Claude configuration'
+[[ ! -e "$dry_codex_dir/skills" && ! -e "$dry_codex_dir/sdlc" ]] || fail 'dry run changed Codex configuration'
+if find "$dry_claude_dir/skills" -maxdepth 1 -name 'example-old-*' -print -quit | grep -q .; then
+  fail 'dry run created a Claude backup'
+fi
 
 transaction_claude_dir="$test_root/transaction-claude"
 transaction_codex_dir="$test_root/transaction-codex"
 fake_bin="$test_root/fake-bin"
 link_counter="$test_root/link-counter"
-mkdir -p "$transaction_claude_dir/sdlc" "$transaction_claude_dir/commands" "$transaction_claude_dir/skills" "$transaction_codex_dir/sdlc" "$transaction_codex_dir/commands" "$transaction_codex_dir/skills" "$fake_bin"
-printf 'legacy transactional claude\n' > "$transaction_claude_dir/CLAUDE.md"
-printf 'legacy transactional codex\n' > "$transaction_codex_dir/AGENTS.md"
+mkdir -p "$transaction_claude_dir/sdlc" "$transaction_claude_dir/skills/example" "$transaction_codex_dir/sdlc" "$transaction_codex_dir/skills/example" "$fake_bin"
 printf 'legacy transactional claude sdlc\n' > "$transaction_claude_dir/sdlc/legacy.md"
-printf 'legacy transactional claude commands\n' > "$transaction_claude_dir/commands/legacy.md"
-printf 'legacy transactional claude skills\n' > "$transaction_claude_dir/skills/legacy.md"
+printf 'legacy transactional claude skill\n' > "$transaction_claude_dir/skills/example/SKILL.md"
 printf 'legacy transactional codex sdlc\n' > "$transaction_codex_dir/sdlc/legacy.md"
-printf 'legacy transactional codex commands\n' > "$transaction_codex_dir/commands/legacy.md"
-printf 'legacy transactional codex skills\n' > "$transaction_codex_dir/skills/legacy.md"
+printf 'legacy transactional codex skill\n' > "$transaction_codex_dir/skills/example/SKILL.md"
 
 printf '%s\n' \
   '#!/usr/bin/env bash' \
@@ -143,17 +147,15 @@ if PATH="$fake_bin:$PATH" INSTALL_LINK_COUNTER="$link_counter" INSTALL_FAIL_LINK
   fail 'installer did not fail when link creation failed mid-transaction'
 fi
 
-assert_file_content "$transaction_claude_dir/CLAUDE.md" 'legacy transactional claude'
-assert_file_content "$transaction_codex_dir/AGENTS.md" 'legacy transactional codex'
 assert_file_content "$transaction_claude_dir/sdlc/legacy.md" 'legacy transactional claude sdlc'
-assert_file_content "$transaction_claude_dir/commands/legacy.md" 'legacy transactional claude commands'
-assert_file_content "$transaction_claude_dir/skills/legacy.md" 'legacy transactional claude skills'
+assert_file_content "$transaction_claude_dir/skills/example/SKILL.md" 'legacy transactional claude skill'
 assert_file_content "$transaction_codex_dir/sdlc/legacy.md" 'legacy transactional codex sdlc'
-assert_file_content "$transaction_codex_dir/commands/legacy.md" 'legacy transactional codex commands'
-assert_file_content "$transaction_codex_dir/skills/legacy.md" 'legacy transactional codex skills'
-if find "$transaction_claude_dir" "$transaction_codex_dir" -maxdepth 1 -name '*-old-*' -print -quit | grep -q .; then
+assert_file_content "$transaction_codex_dir/skills/example/SKILL.md" 'legacy transactional codex skill'
+[[ ! -e "$transaction_claude_dir/skills/other" && ! -e "$transaction_codex_dir/skills/other" ]] || fail 'installer left new skill links after rollback'
+if find "$transaction_claude_dir" "$transaction_codex_dir" -maxdepth 2 -name '*-old-*' -print -quit | grep -q .; then
   fail 'installer left backup artifacts after rollback'
 fi
+[[ ! -e "$transaction_claude_dir/skills-backup" && ! -e "$transaction_codex_dir/skills-backup" ]] || fail 'installer left a skills backup directory after rollback'
 
 : > "$link_counter"
 if PATH="$fake_bin:$PATH" INSTALL_LINK_COUNTER="$link_counter" INSTALL_FAIL_LINK_AT=5 INSTALL_FAIL_REMOVE=1 "$installer" --source "$source_root" --claude-dir "$transaction_claude_dir" --codex-dir "$transaction_codex_dir" --replace > "$test_root/rollback-failure.out" 2>&1; then
@@ -165,8 +167,8 @@ local_claude_dir="$test_root/local-claude"
 local_codex_dir="$test_root/local-codex"
 "$installer" --local --source "$source_root" --claude-dir "$local_claude_dir" --codex-dir "$local_codex_dir"
 
-assert_link "$local_claude_dir/CLAUDE.md" "$source_root/CLAUDE.md"
-assert_link "$local_codex_dir/AGENTS.md" "$source_root/AGENTS.md"
+assert_link "$local_claude_dir/skills/example" "$source_root/skills/example"
+assert_link "$local_codex_dir/sdlc" "$source_root/sdlc"
 
 track_bin="$test_root/track-bin"
 track_root="$(cd -P "$test_root" && pwd -P)/tracked-projects"
@@ -223,8 +225,8 @@ run_track() {
 
 TRACK_GIT_LOG="$track_git_log" run_track https://github.com/example/demo
 
-assert_link "$track_claude_dir/CLAUDE.md" "$source_root/CLAUDE.md"
-assert_link "$track_codex_dir/AGENTS.md" "$source_root/AGENTS.md"
+assert_link "$track_claude_dir/skills/example" "$source_root/skills/example"
+assert_link "$track_codex_dir/sdlc" "$source_root/sdlc"
 [[ -d "$track_root/example/demo/.git" ]] || fail 'track mode did not prepare a local clone'
 runner_path="$runner_root/example/demo/monitor.sh"
 [[ -f "$runner_path" && -x "$runner_path" ]] || fail 'track mode did not install a managed monitor runner'
@@ -345,7 +347,7 @@ sabotage_claude_dir="$test_root/sabotage-claude"
 sabotage_data="$test_root/sabotage-data"
 sabotage_track_root="$test_root/sabotage-tracks"
 sabotage_output="$test_root/sabotage.out"
-if SABOTAGE_TARGET="$sabotage_claude_dir/CLAUDE.md" XDG_DATA_HOME="$sabotage_data" run_track https://github.com/sabotage/demo --claude-dir "$sabotage_claude_dir" --codex-dir "$test_root/sabotage-codex" --track-root "$sabotage_track_root" --cron-bin "$track_bin/failing-crontab" 2>"$sabotage_output"; then
+if SABOTAGE_TARGET="$sabotage_claude_dir/sdlc" XDG_DATA_HOME="$sabotage_data" run_track https://github.com/sabotage/demo --claude-dir "$sabotage_claude_dir" --codex-dir "$test_root/sabotage-codex" --track-root "$sabotage_track_root" --cron-bin "$track_bin/failing-crontab" 2>"$sabotage_output"; then
   fail 'track mode accepted a crontab failure with an unrecoverable link'
 fi
 grep -F 'rollback was incomplete' "$sabotage_output" >/dev/null || fail 'incomplete link rollback was not reported'

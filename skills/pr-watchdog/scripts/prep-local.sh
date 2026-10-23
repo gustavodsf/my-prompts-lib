@@ -49,10 +49,10 @@ SKILLDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # install so an engineer running the repo copy without one still resolves.
 if [ -n "${WATCHDOG_REVIEW_SKILL:-}" ]; then
   REVIEW_SKILL="$WATCHDOG_REVIEW_SKILL"
-elif [ -d "$SKILLDIR/../watchdog-review" ]; then
-  REVIEW_SKILL="$(cd "$SKILLDIR/../watchdog-review" && pwd)"
+elif [ -d "$SKILLDIR/../sdlc-review" ]; then
+  REVIEW_SKILL="$(cd "$SKILLDIR/../sdlc-review" && pwd)"
 else
-  REVIEW_SKILL="$HOME/.claude/skills/watchdog-review"
+  REVIEW_SKILL="$HOME/.claude/skills/sdlc-review"
 fi
 
 die() { echo "prep-local.sh: $*" >&2; exit 1; }
