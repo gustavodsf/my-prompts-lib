@@ -4,11 +4,9 @@ set -euo pipefail
 
 runner_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 config_file="$runner_dir/project.conf"
-claude_bin="${CLAUDE_BIN:-claude}"
-gh_bin="${GH_BIN:-gh}"
-git_bin="${GIT_BIN:-git}"
-codex_bin="${CODEX_BIN:-codex}"
-required_keys=(repo owner checkout worktrees docs state evidence_branch)
+prompt_keys=(repo owner checkout worktrees docs state evidence_branch)
+required_keys=("${prompt_keys[@]}" claude_bin gh_bin git_bin)
+optional_keys=(codex_bin)
 seen_keys=" "
 
 usage() {
@@ -30,13 +28,15 @@ lane="$1"
 
 read_config() {
   local line key value
+  # The installer validates in the same locale, so a value it accepts is never rejected under cron.
+  local LC_ALL=C
 
   [[ -f "$config_file" && ! -L "$config_file" ]] || fail "missing or unsafe project.conf: $config_file"
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" == *=* ]] || fail "malformed project.conf line: $line"
     key="${line%%=*}"
     value="${line#*=}"
-    case " ${required_keys[*]} " in
+    case " ${required_keys[*]} ${optional_keys[*]} " in
       *" $key "*) ;;
       *) fail "unsupported project.conf key: $key" ;;
     esac
@@ -53,7 +53,11 @@ read_config() {
 }
 
 require_tool() {
-  command -v "$2" >/dev/null 2>&1 || fail "$1 is required but was not found: $2"
+  local value="conf_$1_bin"
+
+  [[ -n "${!value:-}" ]] || fail "$1 is required but project.conf has no $1_bin"
+  [[ "${!value}" == /* ]] || fail "$1_bin must be an absolute path: ${!value}"
+  [[ -f "${!value}" && -x "${!value}" ]] || fail "$1 is required but was not found: ${!value}"
 }
 
 lock_dir="$runner_dir/lanes.lock"
@@ -80,7 +84,7 @@ build_prompt() {
 
   printf 'Lane mode: active\n'
   printf 'lane: %s\n' "$lane"
-  for key in "${required_keys[@]}"; do
+  for key in "${prompt_keys[@]}"; do
     value="conf_$key"
     printf '%s: %s\n' "$key" "${!value}"
   done
@@ -89,10 +93,10 @@ build_prompt() {
 }
 
 read_config
-require_tool claude "$claude_bin"
-require_tool gh "$gh_bin"
-require_tool git "$git_bin"
-[[ "$lane" != 'issue' ]] || require_tool codex "$codex_bin"
+require_tool claude
+require_tool gh
+require_tool git
+[[ "$lane" != 'issue' ]] || require_tool codex
 
 prompt_file="$runner_dir/lanes/$lane.md"
 deny_file="$runner_dir/lanes/deny.json"
@@ -110,7 +114,7 @@ build_prompt > "$prompt_copy"
 status=0
 {
   printf '=== %s %s lane start ===\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$lane"
-  (cd "$conf_checkout" && APOLO_SDLC_LANE="$lane" "$claude_bin" -p --dangerously-skip-permissions --settings "$deny_file" < "$prompt_copy") || status=$?
+  (cd "$conf_checkout" && APOLO_SDLC_LANE="$lane" "$conf_claude_bin" -p --dangerously-skip-permissions --settings "$deny_file" < "$prompt_copy") || status=$?
   printf '=== %s %s lane exit %s ===\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$lane" "$status"
 } >> "$log_dir/$lane.log" 2>&1
 exit "$status"

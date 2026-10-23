@@ -438,29 +438,33 @@ chmod 775 "$lane_checkout"
 lane_checkout="$(cd -P "$lane_checkout" && pwd -P)"
 
 lane_attempt=0
+# Native installer layout: a stable link whose target is not named claude.
 lane_tools="$test_root/lane-tools"
-codex_install="$test_root/node-versions/v1/bin"
-mkdir -p "$lane_tools" "$codex_install"
-printf '#!/usr/bin/env bash\n' > "$lane_tools/claude"
-printf '#!/usr/bin/env bash\n' > "$codex_install/codex"
-chmod +x "$lane_tools/claude" "$codex_install/codex"
-ln -s "$codex_install/codex" "$lane_tools/codex"
-node_install="$test_root/node-versions/v1/installation/bin"
-mkdir -p "$node_install"
-printf '#!/usr/bin/env bash\n' > "$node_install/node"
-chmod +x "$node_install/node"
-ln -s "$node_install/node" "$lane_tools/node"
+claude_versions="$test_root/claude-home/versions"
+mkdir -p "$lane_tools" "$claude_versions"
+printf '#!/usr/bin/env bash\n' > "$claude_versions/9.9.9"
+chmod +x "$claude_versions/9.9.9"
+ln -s "$claude_versions/9.9.9" "$lane_tools/claude"
 lane_tools="$(cd -P "$lane_tools" && pwd -P)"
-codex_install="$(cd -P "$codex_install" && pwd -P)"
+
+# fnm layout: a per-shell directory link in front of a versioned bin whose codex links to a .js file.
+node_install="$test_root/node-versions/v1/installation/bin"
+mkdir -p "$node_install" "$test_root/node-versions/v1/installation/lib/codex" "$test_root/multishells"
+printf '#!/usr/bin/env node\n' > "$test_root/node-versions/v1/installation/lib/codex/codex.js"
+printf '#!/usr/bin/env bash\n' > "$node_install/node"
+chmod +x "$test_root/node-versions/v1/installation/lib/codex/codex.js" "$node_install/node"
+ln -s ../lib/codex/codex.js "$node_install/codex"
+ln -s "$test_root/node-versions/v1/installation" "$test_root/multishells/4242"
 node_install="$(cd -P "$node_install" && pwd -P)"
+shell_bin="$test_root/multishells/4242/bin"
 
 run_lanes() {
   lane_attempt=$((lane_attempt + 1))
   lane_claude_dir="$test_root/lane-claude-$lane_attempt"
   lane_codex_dir="$test_root/lane-codex-$lane_attempt"
   lane_track_root="$test_root/lane-tracks-$lane_attempt"
-  TRACK_GH_LOG="$gh_log" CLAUDE_BIN="${CLAUDE_BIN:-$lane_tools/claude}" CODEX_BIN="${CODEX_BIN:-$lane_tools/codex}" \
-    NODE_BIN="${NODE_BIN:-$lane_tools/node}" \
+  TRACK_GH_LOG="$gh_log" CLAUDE_BIN="${CLAUDE_BIN:-$lane_tools/claude}" CODEX_BIN="${CODEX_BIN:-$shell_bin/codex}" \
+    NODE_BIN="${NODE_BIN:-$shell_bin/node}" \
     run_track "$@" --claude-dir "$lane_claude_dir" --codex-dir "$lane_codex_dir" \
     --track-root "$lane_track_root" --gh-bin "$track_bin/gh"
 }
@@ -568,7 +572,11 @@ expected_conf="$(printf '%s\n' \
   "worktrees=$lane_parent/worktrees" \
   "docs=$lane_parent/docs" \
   "state=$lane_runner_dir/state" \
-  'evidence_branch=qa-evidence')"
+  'evidence_branch=qa-evidence' \
+  "claude_bin=$lane_tools/claude" \
+  "gh_bin=$track_bin/gh" \
+  "git_bin=$track_bin/git" \
+  "codex_bin=$node_install/codex")"
 [[ "$(cat "$lane_runner_dir/project.conf")" == "$expected_conf" ]] || fail "unexpected lane configuration: $(cat "$lane_runner_dir/project.conf")"
 assert_private "$lane_runner_dir/project.conf" 'lane configuration'
 if find "$lane_claude_dir" "$lane_codex_dir" \( -name 'lane.sh' -o -name 'deny.json' -o -name 'project.conf' -o -lname "*/lanes*" -o -lname '*lane.sh' \) -print | grep -q .; then
@@ -639,7 +647,7 @@ ci_line="$(lane_line "$ci_marker")"
 [[ "$ci_line" == *" $lane_runner_dir/lane.sh ci >/dev/null 2> $lane_runner_dir/logs/ci-last-error.log $ci_marker" ]] \
   || fail "ci lane does not run the managed runner: $ci_line"
 lane_path="$(printf '%s\n' "$issue_line" | sed -n 's/^.* PATH=\([^ ]*\) .*$/\1/p')"
-for directory in "$lane_tools" "$codex_install" "$node_install" /usr/bin /bin; do
+for directory in "$lane_tools" "$node_install" /usr/bin /bin; do
   [[ ":$lane_path:" == *":$directory:"* ]] || fail "lane PATH does not include $directory: $lane_path"
 done
 grep -qxF '0 3 * * * /usr/bin/backup' "$cron_file" || fail 'scheduling lanes removed an unrelated entry'
@@ -674,6 +682,17 @@ grep -qF 'codex' "$test_root/lane.err" || fail "installer did not explain the mi
 CODEX_BIN="$test_root/absent/codex" run_lanes https://github.com/lanes/demo --lanes ci --checkout "$lane_checkout" > /dev/null \
   || fail 'installer required codex for the ci lane'
 [[ "$(count_marker "$ci_marker")" == 1 ]] || fail 'ci lane was not scheduled without codex'
+if grep -q '^codex_bin=' "$lane_runner_dir/project.conf"; then
+  fail 'installer recorded codex for a ci-only install without codex'
+fi
+
+accented_checkout="$test_root/projeto-ã/app"
+mkdir -p "$accented_checkout/.git"
+printf 'https://github.com/lanes/demo\n' > "$accented_checkout/.git/origin-url"
+if LC_ALL=pt_BR.UTF-8 run_lanes https://github.com/lanes/demo --lanes ci --checkout "$accented_checkout" 2> "$test_root/lane.err"; then
+  fail 'installer accepted a non-ASCII checkout that cron cannot read back'
+fi
+grep -qF 'cron' "$test_root/lane.err" || fail "installer did not explain the non-ASCII checkout: $(cat "$test_root/lane.err")"
 [[ "$(grep -vF -e "$ci_marker" -e "$monitor_marker" "$cron_file" | sort)" == "$(printf '%s\n' "$cron_before_missing_tool" | grep -vF "$monitor_marker" | sort)" ]] \
   || fail 'rejected lane installs changed unrelated crontab entries'
 

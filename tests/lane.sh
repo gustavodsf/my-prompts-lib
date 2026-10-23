@@ -46,16 +46,17 @@ write_valid_conf() {
     "worktrees=$test_root/worktrees" \
     "docs=$test_root/docs" \
     "state=$1/state" \
-    'evidence_branch=qa-evidence' > "$1/project.conf"
+    'evidence_branch=qa-evidence' \
+    "claude_bin=${CLAUDE_BIN:-$fake_bin/claude}" \
+    "gh_bin=${GH_BIN:-$fake_bin/gh}" \
+    "git_bin=${GIT_BIN:-$fake_bin/git}" > "$1/project.conf"
+  [[ "${CODEX_BIN:-}" == 'none' ]] || printf 'codex_bin=%s\n' "${CODEX_BIN:-$fake_bin/codex}" >> "$1/project.conf"
 }
 
 run_lane() {
   local runner="$1"
   shift
-  LANE_TEST_LOG="$call_log" \
-    CLAUDE_BIN="${CLAUDE_BIN:-$fake_bin/claude}" GH_BIN="${GH_BIN:-$fake_bin/gh}" \
-    GIT_BIN="${GIT_BIN:-$fake_bin/git}" CODEX_BIN="${CODEX_BIN:-$fake_bin/codex}" \
-    "$runner/lane.sh" "$@"
+  LANE_TEST_LOG="$call_log" "$runner/lane.sh" "$@"
 }
 
 expect_rejection() {
@@ -120,11 +121,34 @@ ln -s "$test_root/linked-target/project.conf" "$linked/project.conf"
 expect_rejection 'a symbolic-link project.conf' 'project.conf' "$linked" issue
 
 absent="$test_root/absent"
-CLAUDE_BIN="$absent/claude" expect_rejection 'a missing claude executable' 'claude' "$runner" issue
-GH_BIN="$absent/gh" expect_rejection 'a missing gh executable' 'gh' "$runner" ci
-GIT_BIN="$absent/git" expect_rejection 'a missing git executable' 'git' "$runner" ci
-CODEX_BIN="$absent/codex" expect_rejection 'a missing codex executable for the issue lane' 'codex' "$runner" issue
-CODEX_BIN="$absent/codex" run_lane "$runner" ci || fail 'ci lane required codex'
+missing_tool_runner() {
+  local runner
+  runner="$(new_runner "missing-$1")"
+  write_valid_conf "$runner"
+  printf '%s\n' "$runner"
+}
+missing="$(CLAUDE_BIN="$absent/claude" missing_tool_runner claude)"
+expect_rejection 'a missing claude executable' 'claude' "$missing" issue
+missing="$(GH_BIN="$absent/gh" missing_tool_runner gh)"
+expect_rejection 'a missing gh executable' 'gh' "$missing" ci
+missing="$(GIT_BIN="$absent/git" missing_tool_runner git)"
+expect_rejection 'a missing git executable' 'git' "$missing" ci
+missing="$(CODEX_BIN="$absent/codex" missing_tool_runner codex)"
+expect_rejection 'a missing codex executable for the issue lane' 'codex' "$missing" issue
+missing="$(CODEX_BIN=none missing_tool_runner no-codex)"
+expect_rejection 'an issue lane without codex_bin' 'codex' "$missing" issue
+run_lane "$missing" ci || fail 'ci lane required codex'
+
+relative="$(new_runner relative)"
+CLAUDE_BIN=claude write_valid_conf "$relative"
+: > "$call_log"
+if PATH="$fake_bin:$PATH" run_lane "$relative" ci 2> "$test_root/err"; then
+  fail 'lane resolved a relative tool path through PATH'
+fi
+grep -qF 'absolute' "$test_root/err" || fail "lane did not explain the relative tool path: $(cat "$test_root/err")"
+if grep -q '^claude ' "$call_log"; then
+  fail 'lane resolved a tool through PATH instead of project.conf'
+fi
 
 no_prompt="$(new_runner no-prompt)"
 write_valid_conf "$no_prompt"
@@ -156,11 +180,11 @@ record="$test_root/record"
 mkdir -p "$record"
 
 run_recorded() {
-  CLAUDE_BIN="$recording_claude" CLAUDE_RECORD="$record" run_lane "$@"
+  CLAUDE_RECORD="$record" run_lane "$@"
 }
 
 executed="$(new_runner executed)"
-write_valid_conf "$executed"
+CLAUDE_BIN="$recording_claude" write_valid_conf "$executed"
 run_recorded "$executed" issue > "$test_root/out" || fail 'lane failed with a valid configuration'
 
 expected_args="$(printf '%s\n' -p --dangerously-skip-permissions --settings "$executed/lanes/deny.json")"
@@ -172,6 +196,9 @@ for expected in 'repo: acme/demo' 'owner: acme-owner' "checkout: $checkout" "wor
   grep -qxF -- "$expected" "$record/stdin" || fail "lane prompt is missing configuration line: $expected"
 done
 [[ "$(tail -n 1 "$record/stdin")" == 'ISSUE LANE PROMPT' ]] || fail 'lane prompt did not end with the lane instructions'
+if grep -q '_bin:' "$record/stdin"; then
+  fail 'lane prompt exposed tool paths'
+fi
 grep -q 'CI LANE PROMPT' "$record/stdin" && fail 'issue lane received the ci prompt'
 [[ ! -s "$test_root/out" ]] || fail 'lane wrote Claude output to standard output instead of the log'
 

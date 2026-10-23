@@ -21,6 +21,10 @@ owner=""
 lane_backup_dir=""
 lane_created_paths=()
 lane_path=""
+lane_claude_bin=""
+lane_gh_bin=""
+lane_git_bin=""
+lane_codex_bin=""
 track_error=""
 track_created_repository=""
 track_created_dirs=()
@@ -131,6 +135,9 @@ verify_tracking_origin() {
 }
 
 validate_cron_path() {
+  # Cron and lane.sh run without a locale, so check printability the same way they will.
+  local LC_ALL=C
+
   [[ "$1" != *%* && ! "$1" =~ [^[:print:]] ]] || fail "path cannot be scheduled safely by cron: $1"
 }
 
@@ -257,7 +264,11 @@ write_lane_config() {
     "worktrees=$project_dir/worktrees" \
     "docs=$project_dir/docs" \
     "state=$runner_dir/state" \
-    'evidence_branch=qa-evidence'
+    'evidence_branch=qa-evidence' \
+    "claude_bin=$lane_claude_bin" \
+    "gh_bin=$lane_gh_bin" \
+    "git_bin=$lane_git_bin"
+  [[ -z "$lane_codex_bin" ]] || printf 'codex_bin=%s\n' "$lane_codex_bin"
 }
 
 # The previous lane set is kept until the crontab update succeeds so a failure restores it intact.
@@ -423,33 +434,32 @@ lane_cron_line() {
     "$(quote_for_shell "$runner_dir/logs/$lane-last-error.log")" "$lane" "$track_owner" "$track_repository"
 }
 
-# Cron has a minimal PATH, and version managers expose tools through per-shell links, so record each tool's real directory.
-resolve_tool_dir() {
+# Version managers such as fnm expose tools through per-shell directory links, so resolve the directory but keep the
+# tool's own name: a file link like ~/.local/bin/claude -> versions/2.1.309 must stay as is to be found by name.
+resolve_tool_path() {
   local path
-  local target
 
-  path="$(command -v "$2" 2>/dev/null)" && [[ -x "$path" ]] || fail "$1 is required by the lanes but was not found: $2"
-  while [[ -L "$path" ]]; do
-    target="$(readlink "$path")"
-    [[ "$target" = /* ]] || target="$(dirname "$path")/$target"
-    path="$target"
-  done
-  (cd -P "$(dirname "$path")" && pwd -P)
+  path="$(command -v "$2" 2>/dev/null)" && [[ -f "$path" && -x "$path" ]] || return 1
+  printf '%s/%s\n' "$(cd -P "$(dirname "$path")" && pwd -P)" "$(basename "$path")"
 }
 
-build_lane_path() {
+build_lane_tools() {
   local directory
+  local tool_path
   local -a directories=()
 
-  directories+=("$(resolve_tool_dir claude "${CLAUDE_BIN:-claude}")")
-  directories+=("$(resolve_tool_dir gh "$gh_bin")")
-  directories+=("$(resolve_tool_dir git "$git_bin")")
-  if [[ "$lanes" == *issue* ]]; then
-    directories+=("$(resolve_tool_dir codex "${CODEX_BIN:-codex}")")
-  fi
-  # npm-installed CLIs such as codex start with `env node`, and node lives outside their package directory.
-  if command -v "${NODE_BIN:-node}" >/dev/null 2>&1; then
-    directories+=("$(resolve_tool_dir node "${NODE_BIN:-node}")")
+  lane_claude_bin="$(resolve_tool_path claude "${CLAUDE_BIN:-claude}")" || fail "claude is required by the lanes but was not found: ${CLAUDE_BIN:-claude}"
+  lane_gh_bin="$(resolve_tool_path gh "$gh_bin")" || fail "gh is required by the lanes but was not found: $gh_bin"
+  lane_git_bin="$(resolve_tool_path git "$git_bin")" || fail "git is required by the lanes but was not found: $git_bin"
+  lane_codex_bin="$(resolve_tool_path codex "${CODEX_BIN:-codex}")" || lane_codex_bin=""
+  [[ "$lanes" != *issue* || -n "$lane_codex_bin" ]] || fail "codex is required by the issue lane but was not found: ${CODEX_BIN:-codex}"
+
+  for tool_path in "$lane_claude_bin" "$lane_gh_bin" "$lane_git_bin" "$lane_codex_bin"; do
+    [[ -z "$tool_path" ]] || { validate_cron_path "$tool_path"; directories+=("$(dirname "$tool_path")"); }
+  done
+  # npm-installed CLIs such as codex start with `env node`, so the lanes also need node's directory.
+  if tool_path="$(resolve_tool_path node "${NODE_BIN:-node}")"; then
+    directories+=("$(dirname "$tool_path")")
   fi
   lane_path=""
   for directory in "${directories[@]}" /usr/local/bin /usr/bin /bin; do
@@ -518,7 +528,7 @@ validate_lane_options() {
     owner="$("$gh_bin" api user --jq .login 2>/dev/null)" || fail 'could not resolve the GitHub owner with gh; pass --owner'
   fi
   [[ "$owner" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] || fail "unsafe GitHub owner: $owner"
-  build_lane_path
+  build_lane_tools
 }
 
 while [[ $# -gt 0 ]]; do
