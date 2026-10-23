@@ -10,6 +10,7 @@ dry_run=0
 local_mode=0
 track_url=""
 track_root="${XDG_DATA_HOME:-${HOME}/.local/share}/apolo-sdlc/projects"
+runner_root="${XDG_DATA_HOME:-${HOME}/.local/share}/apolo-sdlc/runners"
 git_bin="${GIT_BIN:-git}"
 cron_bin="${CRONTAB_BIN:-crontab}"
 track_error=""
@@ -17,6 +18,9 @@ track_created_repository=""
 track_created_owner_dir=""
 track_created_root=""
 track_created_log_dir=""
+track_created_runner_dirs=()
+track_created_runner=""
+track_previous_runner=""
 
 usage() {
   cat <<'EOF'
@@ -125,20 +129,76 @@ quote_for_shell() {
   printf '%q' "$1"
 }
 
+# The schedule runs a private copy so later changes to the configuration clone require a supervised reinstall.
+install_runner() {
+  local runner_path="$1"
+  local runner_dir
+  local monitor_path="$source_dir/scripts/monitor.sh"
+  local directory
+  local staged_runner
+  local -a missing_dirs=()
+
+  runner_dir="$(dirname "$runner_path")"
+  [[ -x "$monitor_path" ]] || { track_fail "monitor is not executable: $monitor_path"; return 1; }
+
+  directory="$runner_dir"
+  while [[ ! -e "$directory" && ! -L "$directory" ]]; do
+    missing_dirs=("$directory" ${missing_dirs[@]+"${missing_dirs[@]}"})
+    directory="$(dirname "$directory")"
+  done
+  for directory in ${missing_dirs[@]+"${missing_dirs[@]}"}; do
+    mkdir -m 700 -- "$directory" || { track_fail "could not create runner directory: $directory"; return 1; }
+    track_created_runner_dirs+=("$directory")
+  done
+  [[ -d "$runner_dir" && ! -L "$runner_dir" ]] || { track_fail "runner path is not a directory: $runner_dir"; return 1; }
+
+  staged_runner="$(mktemp "$runner_dir/.monitor.XXXXXX")" || { track_fail "could not stage monitor runner in $runner_dir"; return 1; }
+  if ! cp -- "$monitor_path" "$staged_runner" || ! chmod 700 "$staged_runner"; then
+    rm -f -- "$staged_runner"
+    track_fail "could not stage monitor runner in $runner_dir"
+    return 1
+  fi
+
+  if [[ -e "$runner_path" || -L "$runner_path" ]]; then
+    if [[ ! -f "$runner_path" || -L "$runner_path" ]]; then
+      rm -f -- "$staged_runner"
+      track_fail "runner path is not a regular file: $runner_path"
+      return 1
+    fi
+    track_previous_runner="$runner_dir/.monitor.previous"
+    if ! cp -p -- "$runner_path" "$track_previous_runner"; then
+      rm -f -- "$staged_runner"
+      track_previous_runner=""
+      track_fail "could not preserve existing monitor runner: $runner_path"
+      return 1
+    fi
+  else
+    track_created_runner="$runner_path"
+  fi
+
+  if ! mv -f -- "$staged_runner" "$runner_path"; then
+    rm -f -- "$staged_runner"
+    track_fail "could not install monitor runner: $runner_path"
+    return 1
+  fi
+  printf 'Installed managed monitor runner at %s\n' "$runner_path"
+}
+
 schedule_tracking() {
   local repository_dir="$1"
   local marker="# apolo-sdlc-track:${track_owner}/${track_repository}"
   local cron_file
   local cron_error
-  local monitor_path="$source_dir/scripts/monitor.sh"
+  local runner_path="$runner_root/${track_owner}/${track_repository}/monitor.sh"
   local cron_line
 
-  [[ -x "$monitor_path" ]] || { track_fail "monitor is not executable: $monitor_path"; return 1; }
-
   if [[ "$dry_run" -eq 1 ]]; then
+    printf 'Would install managed monitor runner at %s\n' "$runner_path"
     printf 'Would add or update 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
     return 0
   fi
+
+  install_runner "$runner_path" || return 1
 
   cron_file="$(mktemp "${TMPDIR:-/tmp}/apolo-sdlc-cron.XXXXXX")" || { track_fail 'could not create temporary cron file'; return 1; }
   cron_error="${cron_file}.err"
@@ -152,7 +212,7 @@ schedule_tracking() {
     : >"$cron_file"
   fi
 
-  cron_line="*/15 * * * * $(quote_for_shell "$monitor_path") --scheduled --repo $(quote_for_shell "$repository_dir") >/dev/null 2>&1 $marker"
+  cron_line="*/15 * * * * $(quote_for_shell "$runner_path") --scheduled --repo $(quote_for_shell "$repository_dir") >/dev/null 2>&1 $marker"
   if ! awk -v marker="$marker" 'index($0, marker) == 0 { print }' "$cron_file" >"${cron_file}.next"; then
     rm -f -- "$cron_file" "$cron_error" "${cron_file}.next"
     track_fail 'could not prepare crontab update'
@@ -170,6 +230,8 @@ schedule_tracking() {
     return 1
   fi
   rm -f -- "$cron_file" "$cron_error"
+  [[ -z "$track_previous_runner" ]] || rm -f -- "$track_previous_runner"
+  track_previous_runner=""
   printf 'Scheduled 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
 }
 
@@ -360,6 +422,16 @@ rollback_installation() {
 
 rollback_tracking() {
   local rollback_failed=0
+  local index
+
+  if [[ -n "$track_previous_runner" ]]; then
+    mv -f -- "$track_previous_runner" "$(dirname "$track_previous_runner")/monitor.sh" || rollback_failed=1
+  elif [[ -n "$track_created_runner" && -e "$track_created_runner" ]]; then
+    rm -f -- "$track_created_runner" || rollback_failed=1
+  fi
+  for ((index = ${#track_created_runner_dirs[@]} - 1; index >= 0; index--)); do
+    rmdir -- "${track_created_runner_dirs[$index]}" 2>/dev/null || rollback_failed=1
+  done
 
   if [[ -n "$track_created_repository" && ( -e "$track_created_repository" || -L "$track_created_repository" ) ]]; then
     rm -rf -- "$track_created_repository" || rollback_failed=1

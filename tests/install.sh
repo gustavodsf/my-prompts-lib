@@ -6,6 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 installer="$repo_root/scripts/install.sh"
 test_root="$(mktemp -d)"
 trap 'rm -rf "$test_root"' EXIT
+export XDG_DATA_HOME="$test_root/data"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -169,6 +170,7 @@ assert_link "$local_codex_dir/AGENTS.md" "$source_root/AGENTS.md"
 
 track_bin="$test_root/track-bin"
 track_root="$(cd -P "$test_root" && pwd -P)/tracked-projects"
+runner_root="$XDG_DATA_HOME/apolo-sdlc/runners"
 track_claude_dir="$test_root/track-claude"
 track_codex_dir="$test_root/track-codex"
 cron_file="$test_root/crontab"
@@ -210,10 +212,18 @@ TRACK_GIT_LOG="$track_git_log" TEST_CRON_FILE="$cron_file" "$installer" --track 
 assert_link "$track_claude_dir/CLAUDE.md" "$source_root/CLAUDE.md"
 assert_link "$track_codex_dir/AGENTS.md" "$source_root/AGENTS.md"
 [[ -d "$track_root/example/demo/.git" ]] || fail 'track mode did not prepare a local clone'
-if ! grep -F "$source_root/scripts/monitor.sh --scheduled --repo $track_root/example/demo" "$cron_file" >/dev/null; then
-  sed -n '1,10p' "$cron_file" >&2
-  fail 'track mode did not target the cloned repository'
+runner_path="$runner_root/example/demo/monitor.sh"
+[[ -f "$runner_path" && -x "$runner_path" ]] || fail 'track mode did not install a managed monitor runner'
+if grep -F "$source_root/scripts/monitor.sh" "$cron_file" >/dev/null; then
+  fail 'track mode scheduled the mutable source monitor'
 fi
+if ! grep -F "$runner_path --scheduled --repo $track_root/example/demo" "$cron_file" >/dev/null; then
+  sed -n '1,10p' "$cron_file" >&2
+  fail 'track mode did not schedule the managed monitor runner'
+fi
+runner_content="$(<"$runner_path")"
+printf '#!/usr/bin/env bash\nprintf changed-source\n' > "$source_root/scripts/monitor.sh"
+[[ "$(<"$runner_path")" == "$runner_content" ]] || fail 'mutable source change altered the installed runner'
 grep -F '# apolo-sdlc-track:example/demo' "$cron_file" >/dev/null || fail 'track mode did not mark its cron entry'
 grep -F 'git clone --depth 1 https://github.com/example/demo ' "$track_git_log" >/dev/null || fail 'track mode did not use a shallow clone'
 if rg -F '>> ' "$cron_file" >/dev/null; then
@@ -261,5 +271,13 @@ if TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/failure/c
 fi
 [[ ! -e "$cron_failure_claude_dir" && ! -e "$cron_failure_codex_dir" ]] || fail 'crontab failure left local configuration changes'
 [[ ! -e "$cron_failure_track_root" ]] || fail 'crontab failure left a tracking directory'
+[[ ! -e "$runner_root/failure" ]] || fail 'crontab failure left a monitor runner'
+
+runner_before_failure="$(<"$runner_path")"
+if TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/failing-crontab"; then
+  fail 'track mode accepted a crontab failure while updating a runner'
+fi
+[[ "$(<"$runner_path")" == "$runner_before_failure" ]] || fail 'crontab failure did not restore the previous monitor runner'
+[[ ! -e "$runner_root/example/demo/.monitor.previous" ]] || fail 'crontab failure left a runner backup'
 
 printf 'PASS: installer behavior\n'
