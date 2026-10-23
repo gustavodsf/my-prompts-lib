@@ -24,6 +24,14 @@ for tool in claude gh git codex; do
   chmod +x "$fake_bin/$tool"
 done
 
+# The fake gh answers pre-check queries with FAKE_GH_OUTPUT, or with a fresh value so runs are never skipped.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'printf "gh %s\\n" "$*" >> "$LANE_TEST_LOG"' \
+  '[[ "${FAKE_GH_RC:-0}" == 0 ]] || exit "$FAKE_GH_RC"' \
+  'printf "%s\\n" "${FAKE_GH_OUTPUT:-$RANDOM$RANDOM$$}"' > "$fake_bin/gh"
+chmod +x "$fake_bin/gh"
+
 checkout="$test_root/checkout"
 mkdir -p "$checkout"
 
@@ -271,6 +279,41 @@ for bad in 'timeout_seconds=soon' 'timeout_seconds=0' 'max_turns=-1'; do
   write_valid_conf "$invalid"
   printf '%s\n' "$bad" >> "$invalid/project.conf"
   expect_rejection "an invalid limit ($bad)" "${bad%%=*}" "$invalid" ci
+done
+
+quiet="$(new_runner quiet)"
+CLAUDE_BIN="$recording_claude" write_valid_conf "$quiet"
+quiet_run() {
+  rm -f "$record/args"
+  CLAUDE_RECORD="$record" FAKE_GH_OUTPUT="$1" run_lane "$quiet" "$2"
+}
+quiet_run 'issue 1 2026-10-23T10:00:00Z' issue || fail 'first pre-checked run failed'
+[[ -e "$record/args" ]] || fail 'lane skipped Claude on its first run'
+grep -q '^gh issue list -R acme/demo --author acme-owner --state open' "$call_log" || fail 'issue pre-check did not query the owner issues'
+quiet_run 'issue 1 2026-10-23T10:00:00Z' issue || fail 'unchanged pre-checked run failed'
+[[ ! -e "$record/args" ]] || fail 'lane started Claude although nothing changed'
+grep -q 'issue lane no changes (pre-check)' "$quiet/logs/issue.log" || fail 'lane did not log the skipped run'
+quiet_run 'issue 1 2026-10-23T10:05:00Z' issue || fail 'changed pre-checked run failed'
+[[ -e "$record/args" ]] || fail 'lane skipped Claude after GitHub changed'
+: > "$quiet/state/issue-busy"
+quiet_run 'issue 1 2026-10-23T10:05:00Z' issue || fail 'busy pre-checked run failed'
+[[ -e "$record/args" ]] || fail 'lane skipped Claude while it still had unfinished work'
+rm "$quiet/state/issue-busy"
+if FAKE_CLAUDE_RC=3 quiet_run 'issue 1 2026-10-23T10:10:00Z' issue; then
+  fail 'lane hid a failed pre-checked run'
+fi
+quiet_run 'issue 1 2026-10-23T10:10:00Z' issue || fail 'retry after a failed run failed'
+[[ -e "$record/args" ]] || fail 'lane recorded the fingerprint of a failed run and skipped the retry'
+if FAKE_GH_RC=1 quiet_run 'ignored' issue; then :; fi
+[[ -e "$record/args" ]] || fail 'lane skipped Claude when the pre-check could not reach GitHub'
+: > "$call_log"
+quiet_run 'ci 9 abc' ci || fail 'first ci pre-checked run failed'
+grep -q '^gh pr list -R acme/demo --state open' "$call_log" || fail 'ci pre-check did not query open pull requests'
+grep -q '^gh run list -R acme/demo' "$call_log" || fail 'ci pre-check did not query workflow runs'
+quiet_run 'ci 9 abc' ci || fail 'unchanged ci run failed'
+[[ ! -e "$record/args" ]] || fail 'ci lane started Claude although nothing changed'
+for prompt in issue ci; do
+  grep -qF "<state>/$prompt-busy" "$repo_root/lanes/$prompt.md" || fail "$prompt lane prompt does not maintain its busy flag"
 done
 
 hanging_claude="$fake_bin/hanging-claude"

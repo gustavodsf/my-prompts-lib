@@ -125,6 +125,20 @@ load_bot_token() {
   [[ "$bot_token" =~ ^[A-Za-z0-9_]+$ ]] || fail "bot-token is malformed: $token_file"
 }
 
+# A cheap summary of what the lane reacts to; an unchanged summary means Claude would only report "no changes".
+github_fingerprint() {
+  [[ -z "$bot_token" ]] || export GH_TOKEN="$bot_token"
+  if [[ "$lane" == 'issue' ]]; then
+    "$conf_gh_bin" issue list -R "$conf_repo" --author "$conf_owner" --state open --limit 100 \
+      --json number,updatedAt --jq '.[] | "\(.number) \(.updatedAt)"'
+  else
+    "$conf_gh_bin" pr list -R "$conf_repo" --state open --limit 100 \
+      --json number,updatedAt,headRefOid --jq '.[] | "\(.number) \(.updatedAt) \(.headRefOid)"' \
+      && "$conf_gh_bin" run list -R "$conf_repo" --limit 20 \
+        --json databaseId,status,conclusion --jq '.[] | "\(.databaseId) \(.status) \(.conclusion)"'
+  fi
+}
+
 run_claude() {
   [[ -z "$bot_token" ]] || export GH_TOKEN="$bot_token"
   cd "$conf_checkout" && APOLO_SDLC_LANE="$lane" exec "$conf_claude_bin" -p --dangerously-skip-permissions \
@@ -165,6 +179,18 @@ if ! acquire_lock; then
   exit 0
 fi
 
+mkdir -p "$conf_state"
+chmod 700 "$conf_state"
+fingerprint_file="$conf_state/$lane-fingerprint"
+fingerprint_known=0
+if fingerprint="$(github_fingerprint 2>/dev/null)"; then
+  fingerprint_known=1
+  if [[ ! -e "$conf_state/$lane-busy" && -f "$fingerprint_file" && "$(cat "$fingerprint_file")" == "$fingerprint" ]]; then
+    printf '=== %s %s lane no changes (pre-check) ===\n' "$(timestamp)" "$lane" >> "$log_dir/$lane.log"
+    exit 0
+  fi
+fi
+
 prompt_copy="$lock_dir/prompt"
 build_prompt > "$prompt_copy"
 status=0
@@ -173,4 +199,8 @@ status=0
   run_with_limit "$conf_timeout_seconds" run_claude || status=$?
   printf '=== %s %s lane exit %s ===\n' "$(timestamp)" "$lane" "$status"
 } >> "$log_dir/$lane.log" 2>&1
+# Recorded only after success, so a failed or interrupted run is retried even if GitHub did not change.
+if [[ "$status" -eq 0 && "$fingerprint_known" -eq 1 ]]; then
+  printf '%s\n' "$fingerprint" > "$fingerprint_file"
+fi
 exit "$status"

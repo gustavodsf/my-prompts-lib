@@ -74,3 +74,5 @@ Every comment starts with a hidden marker line, then the header `> 🤖 **Claude
 ## End of run
 
 Write state after every change, not only at the end. Print a short summary: which issue advanced to which checkpoint, and anything blocked.
+
+The runner skips the next run when GitHub shows no change, so before exiting create the empty file `<state>/issue-busy` if any issue can still advance without a new owner comment (an unfinished checkpoint that is not a waiting state, or a `pendingJob`), and delete it otherwise.

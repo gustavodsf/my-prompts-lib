@@ -59,3 +59,5 @@ Every comment starts with `<!-- claude-agent:ci -->`, then `> 🤖 **Claude** ·
 ## End of run
 
 If nothing needs action, print `no changes` and exit quickly. Otherwise print a short summary of what was handled.
+
+The runner skips the next run when GitHub shows no change, so before exiting create the empty file `<state>/ci-busy` if you left an item half done that the next run should continue, and delete it otherwise.
