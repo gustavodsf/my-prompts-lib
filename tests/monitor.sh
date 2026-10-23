@@ -101,6 +101,13 @@ if grep -Eq '^gh (issue list|pr list)' "$log_file"; then
   fail 'authorized monitor performed unnecessary broad polling on a repeated run'
 fi
 
+: > "$log_file"
+PATH="$fake_bin:$PATH" MONITOR_LOG="$log_file" "$monitor" --repo "$repo_a" --state-file "$state_file" --scheduled
+grep -q '^gh issue view 42 ' "$log_file" || fail 'scheduled monitor did not check the authorized issue'
+if grep -Eq '^(claude |gh (issue list|pr list|issue comment|pr create))' "$log_file"; then
+  fail 'scheduled monitor ran beyond the authorized issue check'
+fi
+
 PATH="$fake_bin:$PATH" MONITOR_LOG="$log_file" "$monitor" --repo "$repo_a" --clear-authorization --state-file "$state_file"
 [[ ! -e "$state_file" ]] || fail 'monitor did not clear the authorization state'
 

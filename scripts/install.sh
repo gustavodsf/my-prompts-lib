@@ -15,12 +15,10 @@ git_bin="${GIT_BIN:-git}"
 cron_bin="${CRONTAB_BIN:-crontab}"
 track_error=""
 track_created_repository=""
-track_created_owner_dir=""
-track_created_root=""
-track_created_log_dir=""
-track_created_runner_dirs=()
+track_created_dirs=()
 track_created_runner=""
 track_previous_runner=""
+new_dirs=()
 
 usage() {
   cat <<'EOF'
@@ -33,7 +31,7 @@ Options:
   --source PATH       Source clone to link from.
   --claude-dir PATH   Claude configuration directory.
   --codex-dir PATH    Codex configuration directory.
-  --track-root PATH   Directory used for clones and monitor logs with --track.
+  --track-root PATH   Directory used for tracked clones with --track.
   --git-bin PATH      Git executable used to clone with --track.
   --cron-bin PATH     Crontab executable used to schedule with --track.
   --replace           Back up existing managed targets before linking.
@@ -85,44 +83,76 @@ canonicalize_directory() {
   printf '%s%s\n' "$base" "$suffix_path"
 }
 
+parse_github_repository() {
+  local url="$1"
+  local allow_ssh="$2"
+  local prefix='https://github\.com/'
+  local pattern
+
+  [[ "$allow_ssh" -eq 0 ]] || prefix='(https://github\.com/|git@github\.com:|ssh://git@github\.com/)'
+  pattern="^${prefix}([A-Za-z0-9][A-Za-z0-9._-]*)/([A-Za-z0-9][A-Za-z0-9._-]*)$"
+  url="${url%.git}"
+  [[ "$url" =~ $pattern ]] || return 1
+  printf '%s/%s\n' "${BASH_REMATCH[${#BASH_REMATCH[@]} - 2]}" "${BASH_REMATCH[${#BASH_REMATCH[@]} - 1]}"
+}
+
 validate_github_url() {
   local url="$1"
+  local repository
 
-  if [[ "$url" =~ ^https://github\.com/([A-Za-z0-9][A-Za-z0-9._-]*)/([A-Za-z0-9][A-Za-z0-9._-]*)(\.git)?$ ]]; then
-    track_owner="${BASH_REMATCH[1]}"
-    track_repository="${BASH_REMATCH[2]}"
-    track_repository="${track_repository%.git}"
-    return 0
-  fi
-
-  fail "track URL must be an HTTPS GitHub repository URL: $url"
+  repository="$(parse_github_repository "$url" 0)" || fail "track URL must be an HTTPS GitHub repository URL: $url"
+  track_owner="${repository%%/*}"
+  track_repository="${repository#*/}"
 }
 
-normalize_github_remote() {
-  local remote_url="$1"
-  local remote_owner
-  local remote_repository
-
-  if [[ "$remote_url" =~ ^(https://github\.com/|git@github\.com:)([A-Za-z0-9][A-Za-z0-9._-]*)/([A-Za-z0-9][A-Za-z0-9._-]*)(\.git)?$ ]]; then
-    remote_owner="${BASH_REMATCH[2]}"
-    remote_repository="${BASH_REMATCH[3]}"
-    remote_repository="${remote_repository%.git}"
-    printf 'https://github.com/%s/%s\n' "$remote_owner" "$remote_repository"
-    return 0
-  fi
-
-  return 1
-}
-
+# Reads the configured URL because `git remote get-url` applies insteadOf rewrites.
 verify_tracking_origin() {
   local repository_dir="$1"
   local remote_url
-  local normalized_remote
-  local expected_remote="https://github.com/${track_owner}/${track_repository}"
+  local remote_repository
 
-  remote_url="$("$git_bin" -C "$repository_dir" remote get-url origin)" || { track_fail "tracked repository has no origin remote: $repository_dir"; return 1; }
-  normalized_remote="$(normalize_github_remote "$remote_url")" || { track_fail "tracked repository origin is not a GitHub repository: $repository_dir"; return 1; }
-  [[ "$normalized_remote" == "$expected_remote" ]] || { track_fail "tracked repository origin does not match requested URL: $repository_dir"; return 1; }
+  remote_url="$("$git_bin" -C "$repository_dir" config --get remote.origin.url)" || { track_fail "tracked repository has no origin remote: $repository_dir"; return 1; }
+  remote_repository="$(parse_github_repository "$remote_url" 1)" || { track_fail "tracked repository origin is not a GitHub repository: $repository_dir"; return 1; }
+  [[ "$remote_repository" == "${track_owner}/${track_repository}" ]] || { track_fail "tracked repository origin does not match requested URL: $repository_dir"; return 1; }
+}
+
+validate_cron_path() {
+  [[ "$1" != *%* && ! "$1" =~ [^[:print:]] ]] || fail "path cannot be scheduled safely by cron: $1"
+}
+
+# Creates missing directories outermost first and records them in new_dirs for rollback.
+create_directory_tree() {
+  local mode="$1"
+  local directory="$2"
+  local -a missing=()
+
+  new_dirs=()
+  while [[ ! -e "$directory" && ! -L "$directory" ]]; do
+    missing=("$directory" ${missing[@]+"${missing[@]}"})
+    directory="$(dirname "$directory")"
+  done
+  for directory in ${missing[@]+"${missing[@]}"}; do
+    mkdir ${mode:+-m "$mode"} -- "$directory" || return 1
+    new_dirs+=("$directory")
+  done
+}
+
+remove_directories() {
+  local index
+  local removal_failed=0
+  local -a directories=("$@")
+
+  for ((index = ${#directories[@]} - 1; index >= 0; index--)); do
+    rmdir -- "${directories[$index]}" 2>/dev/null || removal_failed=1
+  done
+  [[ "$removal_failed" -eq 0 ]]
+}
+
+is_private_directory() {
+  local directory="$1"
+
+  [[ -d "$directory" && ! -L "$directory" && -O "$directory" ]] || return 1
+  [[ -z "$(find "$directory" -prune \( -perm -0020 -o -perm -0002 \) -print)" ]]
 }
 
 quote_for_shell() {
@@ -136,38 +166,21 @@ install_runner() {
   local monitor_path="$source_dir/scripts/monitor.sh"
   local directory
   local staged_runner
-  local -a missing_dirs=()
 
   runner_dir="$(dirname "$runner_path")"
   [[ -x "$monitor_path" ]] || { track_fail "monitor is not executable: $monitor_path"; return 1; }
 
-  directory="$runner_dir"
-  while [[ ! -e "$directory" && ! -L "$directory" ]]; do
-    missing_dirs=("$directory" ${missing_dirs[@]+"${missing_dirs[@]}"})
-    directory="$(dirname "$directory")"
+  create_directory_tree 700 "$runner_dir" || { track_created_dirs+=(${new_dirs[@]+"${new_dirs[@]}"}); track_fail "could not create runner directory: $runner_dir"; return 1; }
+  track_created_dirs+=(${new_dirs[@]+"${new_dirs[@]}"})
+  for directory in "$runner_root" "$(dirname "$runner_dir")" "$runner_dir"; do
+    is_private_directory "$directory" || { track_fail "runner directory must be a private directory owned by the current user: $directory"; return 1; }
   done
-  for directory in ${missing_dirs[@]+"${missing_dirs[@]}"}; do
-    mkdir -m 700 -- "$directory" || { track_fail "could not create runner directory: $directory"; return 1; }
-    track_created_runner_dirs+=("$directory")
-  done
-  [[ -d "$runner_dir" && ! -L "$runner_dir" ]] || { track_fail "runner path is not a directory: $runner_dir"; return 1; }
-
-  staged_runner="$(mktemp "$runner_dir/.monitor.XXXXXX")" || { track_fail "could not stage monitor runner in $runner_dir"; return 1; }
-  if ! cp -- "$monitor_path" "$staged_runner" || ! chmod 700 "$staged_runner"; then
-    rm -f -- "$staged_runner"
-    track_fail "could not stage monitor runner in $runner_dir"
-    return 1
-  fi
 
   if [[ -e "$runner_path" || -L "$runner_path" ]]; then
-    if [[ ! -f "$runner_path" || -L "$runner_path" ]]; then
-      rm -f -- "$staged_runner"
-      track_fail "runner path is not a regular file: $runner_path"
-      return 1
-    fi
-    track_previous_runner="$runner_dir/.monitor.previous"
+    [[ -f "$runner_path" && ! -L "$runner_path" ]] || { track_fail "runner path is not a regular file: $runner_path"; return 1; }
+    track_previous_runner="$(mktemp "$runner_dir/.monitor.previous.XXXXXX")" || { track_previous_runner=""; track_fail "could not preserve existing monitor runner: $runner_path"; return 1; }
     if ! cp -p -- "$runner_path" "$track_previous_runner"; then
-      rm -f -- "$staged_runner"
+      rm -f -- "$track_previous_runner"
       track_previous_runner=""
       track_fail "could not preserve existing monitor runner: $runner_path"
       return 1
@@ -176,7 +189,8 @@ install_runner() {
     track_created_runner="$runner_path"
   fi
 
-  if ! mv -f -- "$staged_runner" "$runner_path"; then
+  staged_runner="$(mktemp "$runner_dir/.monitor.XXXXXX")" || { track_fail "could not stage monitor runner in $runner_dir"; return 1; }
+  if ! cp -- "$monitor_path" "$staged_runner" || ! chmod 700 "$staged_runner" || ! mv -f -- "$staged_runner" "$runner_path"; then
     rm -f -- "$staged_runner"
     track_fail "could not install monitor runner: $runner_path"
     return 1
@@ -184,12 +198,27 @@ install_runner() {
   printf 'Installed managed monitor runner at %s\n' "$runner_path"
 }
 
+write_crontab() {
+  local work_dir="$1"
+  local marker="$2"
+  local cron_line="$3"
+
+  if ! "$cron_bin" -l >"$work_dir/current" 2>"$work_dir/error"; then
+    grep -Eiq 'no crontab' "$work_dir/error" || { track_fail "could not read crontab using $cron_bin"; return 1; }
+    : >"$work_dir/current"
+  fi
+  awk -v marker="$marker" '{ start = length($0) - length(marker) + 1 } start < 1 || substr($0, start) != marker { print }' \
+    "$work_dir/current" >"$work_dir/next" || { track_fail 'could not prepare crontab update'; return 1; }
+  printf '%s\n' "$cron_line" >>"$work_dir/next" || { track_fail 'could not prepare crontab update'; return 1; }
+  "$cron_bin" "$work_dir/next" || { track_fail "could not install crontab using $cron_bin"; return 1; }
+}
+
 schedule_tracking() {
   local repository_dir="$1"
   local marker="# apolo-sdlc-track:${track_owner}/${track_repository}"
-  local cron_file
-  local cron_error
   local runner_path="$runner_root/${track_owner}/${track_repository}/monitor.sh"
+  local error_log="$runner_root/${track_owner}/${track_repository}/last-error.log"
+  local work_dir
   local cron_line
 
   if [[ "$dry_run" -eq 1 ]]; then
@@ -200,36 +229,14 @@ schedule_tracking() {
 
   install_runner "$runner_path" || return 1
 
-  cron_file="$(mktemp "${TMPDIR:-/tmp}/apolo-sdlc-cron.XXXXXX")" || { track_fail 'could not create temporary cron file'; return 1; }
-  cron_error="${cron_file}.err"
-
-  if ! "$cron_bin" -l >"$cron_file" 2>"$cron_error"; then
-    if ! grep -Eiq 'no crontab' "$cron_error"; then
-      rm -f -- "$cron_file" "$cron_error"
-      track_fail "could not read crontab using $cron_bin"
-      return 1
-    fi
-    : >"$cron_file"
-  fi
-
-  cron_line="*/15 * * * * $(quote_for_shell "$runner_path") --scheduled --repo $(quote_for_shell "$repository_dir") >/dev/null 2>&1 $marker"
-  if ! awk -v marker="$marker" 'index($0, marker) == 0 { print }' "$cron_file" >"${cron_file}.next"; then
-    rm -f -- "$cron_file" "$cron_error" "${cron_file}.next"
-    track_fail 'could not prepare crontab update'
+  # Stdout is discarded; stderr is truncated each run so only the latest failure is kept.
+  cron_line="*/15 * * * * $(quote_for_shell "$runner_path") --scheduled --repo $(quote_for_shell "$repository_dir") >/dev/null 2> $(quote_for_shell "$error_log") $marker"
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/apolo-sdlc-cron.XXXXXX")" || { track_fail 'could not create temporary cron directory'; return 1; }
+  if ! write_crontab "$work_dir" "$marker" "$cron_line"; then
+    rm -rf -- "$work_dir"
     return 1
   fi
-  printf '%s\n' "$cron_line" >>"${cron_file}.next"
-  if ! mv -- "${cron_file}.next" "$cron_file"; then
-    rm -f -- "$cron_file" "$cron_error" "${cron_file}.next"
-    track_fail 'could not prepare crontab update'
-    return 1
-  fi
-  if ! "$cron_bin" "$cron_file"; then
-    rm -f -- "$cron_file" "$cron_error"
-    track_fail "could not install crontab using $cron_bin"
-    return 1
-  fi
-  rm -f -- "$cron_file" "$cron_error"
+  rm -rf -- "$work_dir"
   [[ -z "$track_previous_runner" ]] || rm -f -- "$track_previous_runner"
   track_previous_runner=""
   printf 'Scheduled 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
@@ -246,14 +253,8 @@ prepare_tracking() {
   elif [[ "$dry_run" -eq 1 ]]; then
     printf 'Would clone %s to %s\n' "$track_url" "$repository_dir"
   else
-    if [[ ! -e "$track_root" ]]; then
-      mkdir -p "$track_root" || { track_fail "could not create track root: $track_root"; return 1; }
-      track_created_root="$track_root"
-    fi
-    if [[ ! -e "$owner_dir" ]]; then
-      mkdir "$owner_dir" || { track_fail "could not create tracked repository owner directory: $owner_dir"; return 1; }
-      track_created_owner_dir="$owner_dir"
-    fi
+    create_directory_tree 700 "$owner_dir" || { track_created_dirs+=(${new_dirs[@]+"${new_dirs[@]}"}); track_fail "could not create tracked repository directory: $owner_dir"; return 1; }
+    track_created_dirs+=(${new_dirs[@]+"${new_dirs[@]}"})
     track_created_repository="$repository_dir"
     "$git_bin" clone --depth 1 "$track_url" "$repository_dir" || { track_fail "could not clone tracked repository: $track_url"; return 1; }
     printf 'Cloned %s to %s\n' "$track_url" "$repository_dir"
@@ -332,6 +333,8 @@ if [[ -n "$track_url" ]]; then
   validate_github_url "$track_url"
   track_root="$(canonicalize_directory "$track_root")"
   [[ "$track_root" != "/" ]] || fail 'unsafe track root'
+  validate_cron_path "$track_root/${track_owner}/${track_repository}"
+  validate_cron_path "$runner_root/${track_owner}/${track_repository}/last-error.log"
 fi
 
 for directory in "$claude_dir" "$codex_dir"; do
@@ -413,38 +416,23 @@ rollback_installation() {
     fi
   done
 
-  for ((index = ${#created_directories[@]} - 1; index >= 0; index--)); do
-    rmdir -- "${created_directories[$index]}" 2>/dev/null || true
-  done
+  remove_directories ${created_directories[@]+"${created_directories[@]}"} || rollback_failed=1
 
   [[ "$rollback_failed" -eq 0 ]]
 }
 
 rollback_tracking() {
   local rollback_failed=0
-  local index
 
   if [[ -n "$track_previous_runner" ]]; then
     mv -f -- "$track_previous_runner" "$(dirname "$track_previous_runner")/monitor.sh" || rollback_failed=1
   elif [[ -n "$track_created_runner" && -e "$track_created_runner" ]]; then
     rm -f -- "$track_created_runner" || rollback_failed=1
   fi
-  for ((index = ${#track_created_runner_dirs[@]} - 1; index >= 0; index--)); do
-    rmdir -- "${track_created_runner_dirs[$index]}" 2>/dev/null || rollback_failed=1
-  done
-
   if [[ -n "$track_created_repository" && ( -e "$track_created_repository" || -L "$track_created_repository" ) ]]; then
     rm -rf -- "$track_created_repository" || rollback_failed=1
   fi
-  if [[ -n "$track_created_owner_dir" ]]; then
-    rmdir -- "$track_created_owner_dir" 2>/dev/null || rollback_failed=1
-  fi
-  if [[ -n "$track_created_log_dir" ]]; then
-    rmdir -- "$track_created_log_dir" 2>/dev/null || rollback_failed=1
-  fi
-  if [[ -n "$track_created_root" ]]; then
-    rmdir -- "$track_created_root" 2>/dev/null || rollback_failed=1
-  fi
+  remove_directories ${track_created_dirs[@]+"${track_created_dirs[@]}"} || rollback_failed=1
 
   [[ "$rollback_failed" -eq 0 ]]
 }
@@ -476,10 +464,12 @@ for directory in "$claude_dir" "$codex_dir"; do
   if [[ "$dry_run" -eq 1 ]]; then
     [[ -d "$directory" ]] || printf 'Would create directory %s\n' "$directory"
   else
-    if [[ ! -d "$directory" ]]; then
-      mkdir -p "$directory" || fail "could not create configuration directory: $directory"
-      created_directories+=("$directory")
+    if ! create_directory_tree '' "$directory"; then
+      created_directories+=(${new_dirs[@]+"${new_dirs[@]}"})
+      rollback_installation || true
+      fail "could not create configuration directory: $directory"
     fi
+    created_directories+=(${new_dirs[@]+"${new_dirs[@]}"})
   fi
 done
 
@@ -517,7 +507,10 @@ done
 
 if [[ -n "$track_url" ]]; then
   if ! prepare_tracking; then
-    if ! rollback_installation || ! rollback_tracking; then
+    rollback_failed=0
+    rollback_installation || rollback_failed=1
+    rollback_tracking || rollback_failed=1
+    if [[ "$rollback_failed" -eq 1 ]]; then
       fail "tracking setup failed and rollback was incomplete: ${track_error:-unknown tracking error}"
     fi
     fail "tracking setup failed and local configuration was rolled back: ${track_error:-unknown tracking error}"

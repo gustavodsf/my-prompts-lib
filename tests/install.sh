@@ -184,11 +184,15 @@ printf '%s\n' \
   '  repository_dir="${!#}"' \
   '  track_url="${@: -2:1}"' \
   '  mkdir -p "$repository_dir/.git"' \
-  '  printf "%s\\n" "$track_url" > "$repository_dir/.git/origin-url"' \
+  '  printf "%s\\n" "${TRACK_CLONE_ORIGIN:-$track_url}" > "$repository_dir/.git/origin-url"' \
   '  exit 0' \
   'fi' \
   'if [[ "$1" == "-C" && "$3" == "rev-parse" && "$4" == "--is-inside-work-tree" ]]; then exit 0; fi' \
-  'if [[ "$1" == "-C" && "$3" == "remote" && "$4" == "get-url" && "$5" == "origin" ]]; then cat "$2/.git/origin-url"; exit 0; fi' \
+  'if [[ "$1" == "-C" && "$3" == "config" && "$4" == "--get" && "$5" == "remote.origin.url" ]]; then cat "$2/.git/origin-url"; exit 0; fi' \
+  'if [[ "$1" == "-C" && "$3" == "remote" && "$4" == "get-url" && "$5" == "origin" ]]; then' \
+  '  if [[ "${TRACK_INSTEADOF:-0}" == "1" ]]; then sed "s|^https://github.com/|ssh://git@example.invalid/|" "$2/.git/origin-url"; else cat "$2/.git/origin-url"; fi' \
+  '  exit 0' \
+  'fi' \
   'exit 1' > "$track_bin/git"
 chmod +x "$track_bin/git"
 printf '%s\n' \
@@ -204,10 +208,19 @@ printf '%s\n' \
   'if [[ "$1" == "-l" ]]; then' \
   '  if [[ -f "$TEST_CRON_FILE" ]]; then cat "$TEST_CRON_FILE"; exit 0; else echo "no crontab for test" >&2; exit 1; fi' \
   'fi' \
+  '[[ -z "${SABOTAGE_TARGET:-}" ]] || { rm -f "$SABOTAGE_TARGET"; printf "user file\\n" > "$SABOTAGE_TARGET"; }' \
   'exit 1' > "$track_bin/failing-crontab"
 chmod +x "$track_bin/failing-crontab"
 
-TRACK_GIT_LOG="$track_git_log" TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
+run_track() {
+  local url="$1"
+  shift
+  TEST_CRON_FILE="$cron_file" "$installer" --track "$url" --source "$source_root" \
+    --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" \
+    --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab" "$@"
+}
+
+TRACK_GIT_LOG="$track_git_log" run_track https://github.com/example/demo
 
 assert_link "$track_claude_dir/CLAUDE.md" "$source_root/CLAUDE.md"
 assert_link "$track_codex_dir/AGENTS.md" "$source_root/AGENTS.md"
@@ -221,6 +234,10 @@ if ! grep -F "$runner_path --scheduled --repo $track_root/example/demo" "$cron_f
   sed -n '1,10p' "$cron_file" >&2
   fail 'track mode did not schedule the managed monitor runner'
 fi
+grep -F "2> $runner_root/example/demo/last-error.log" "$cron_file" >/dev/null || fail 'track mode did not keep the latest scheduled error'
+if grep -F '2>&1' "$cron_file" >/dev/null; then
+  fail 'track mode discarded scheduled errors'
+fi
 runner_content="$(<"$runner_path")"
 printf '#!/usr/bin/env bash\nprintf changed-source\n' > "$source_root/scripts/monitor.sh"
 [[ "$(<"$runner_path")" == "$runner_content" ]] || fail 'mutable source change altered the installed runner'
@@ -233,31 +250,66 @@ if rg -q 'claude|curl|aws|gh issue comment|git push|gh pr create' "$cron_file"; 
   fail 'track mode added a cron entry with a write or external execution path'
 fi
 
-TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
+run_track https://github.com/example/demo
 [[ "$(grep -Fc '# apolo-sdlc-track:example/demo' "$cron_file")" == 1 ]] || fail 'track mode duplicated its cron entry'
 
-TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/a-b/c --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
-TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/a/b-c --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"
+run_track https://github.com/a-b/c
+run_track https://github.com/a/b-c
 [[ -d "$track_root/a-b/c/.git" && -d "$track_root/a/b-c/.git" ]] || fail 'track mode allowed distinct GitHub repositories to collide'
 [[ "$(grep -Fc '# apolo-sdlc-track:a-b/c' "$cron_file")" == 1 ]] || fail 'first collision scenario was not scheduled'
 [[ "$(grep -Fc '# apolo-sdlc-track:a/b-c' "$cron_file")" == 1 ]] || fail 'second collision scenario was not scheduled'
 
+run_track https://github.com/prefix/demo-extra
+run_track https://github.com/prefix/demo
+[[ "$(grep -Fc '# apolo-sdlc-track:prefix/demo-extra' "$cron_file")" == 1 ]] || fail 'tracking a prefix repository removed another cron entry'
+[[ "$(grep -Fc '# apolo-sdlc-track:prefix/demo' "$cron_file")" == 2 ]] || fail 'prefix repository was not scheduled once'
+
+TRACK_INSTEADOF=1 run_track https://github.com/rewrite/demo
+[[ "$(grep -Fc '# apolo-sdlc-track:rewrite/demo' "$cron_file")" == 1 ]] || fail 'track mode rejected an origin rewritten by Git URL configuration'
+
 mkdir -p "$track_root/mismatch/demo/.git"
 printf 'https://github.com/mismatch/other\n' > "$track_root/mismatch/demo/.git/origin-url"
-if TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/mismatch/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"; then
+if run_track https://github.com/mismatch/demo; then
   fail 'track mode accepted a worktree with an incompatible origin'
 fi
 [[ "$(grep -Fc '# apolo-sdlc-track:mismatch/demo' "$cron_file")" == 0 ]] || fail 'incompatible origin changed the crontab'
 
-if TEST_CRON_FILE="$cron_file" "$installer" --track 'https://github.com/example/demo?token=nope' --source "$source_root" --claude-dir "$test_root/invalid-claude" --codex-dir "$test_root/invalid-codex" --track-root "$test_root/invalid-track" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"; then
+if TRACK_CLONE_ORIGIN=https://github.com/other/clone run_track https://github.com/fresh/clone; then
+  fail 'track mode accepted a fresh clone with an incompatible origin'
+fi
+[[ ! -e "$track_root/fresh" ]] || fail 'fresh clone with incompatible origin was not removed'
+[[ "$(grep -Fc '# apolo-sdlc-track:fresh/clone' "$cron_file")" == 0 ]] || fail 'fresh clone with incompatible origin changed the crontab'
+
+if run_track 'https://github.com/example/demo?token=nope' --claude-dir "$test_root/invalid-claude" --codex-dir "$test_root/invalid-codex" --track-root "$test_root/invalid-track"; then
   fail 'track mode accepted an unsafe GitHub URL'
 fi
 [[ ! -e "$test_root/invalid-track" ]] || fail 'invalid track URL created a clone directory'
 
+if XDG_DATA_HOME="$test_root/percent%data" run_track https://github.com/percent/demo --claude-dir "$test_root/percent-claude" --codex-dir "$test_root/percent-codex"; then
+  fail 'track mode accepted a cron path containing a percent sign'
+fi
+[[ ! -e "$test_root/percent-claude" && ! -e "$test_root/percent%data" ]] || fail 'unsafe cron path changed local state'
+[[ "$(grep -Fc '# apolo-sdlc-track:percent/demo' "$cron_file")" == 0 ]] || fail 'unsafe cron path changed the crontab'
+
+mkdir -p "$runner_root/shared/demo"
+chmod 777 "$runner_root/shared/demo"
+if run_track https://github.com/shared/demo --claude-dir "$test_root/shared-claude" --codex-dir "$test_root/shared-codex"; then
+  fail 'track mode accepted a runner directory writable by other users'
+fi
+[[ ! -e "$runner_root/shared/demo/monitor.sh" ]] || fail 'track mode installed a runner in a shared directory'
+[[ "$(grep -Fc '# apolo-sdlc-track:shared/demo' "$cron_file")" == 0 ]] || fail 'shared runner directory changed the crontab'
+
+mkdir -p "$runner_root/irregular/demo/monitor.sh"
+chmod 700 "$runner_root/irregular" "$runner_root/irregular/demo"
+if run_track https://github.com/irregular/demo --claude-dir "$test_root/irregular-claude" --codex-dir "$test_root/irregular-codex"; then
+  fail 'track mode accepted a runner path that is not a regular file'
+fi
+[[ "$(grep -Fc '# apolo-sdlc-track:irregular/demo' "$cron_file")" == 0 ]] || fail 'irregular runner path changed the crontab'
+
 clone_failure_claude_dir="$test_root/clone-failure-claude"
 clone_failure_codex_dir="$test_root/clone-failure-codex"
 clone_failure_track_root="$test_root/clone-failure-tracks"
-if TRACK_FAIL_CLONE=1 TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/failure/clone --source "$source_root" --claude-dir "$clone_failure_claude_dir" --codex-dir "$clone_failure_codex_dir" --track-root "$clone_failure_track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/crontab"; then
+if TRACK_FAIL_CLONE=1 run_track https://github.com/failure/clone --claude-dir "$clone_failure_claude_dir" --codex-dir "$clone_failure_codex_dir" --track-root "$clone_failure_track_root"; then
   fail 'track mode accepted a clone failure'
 fi
 [[ ! -e "$clone_failure_claude_dir" && ! -e "$clone_failure_codex_dir" ]] || fail 'clone failure left local configuration changes'
@@ -265,19 +317,38 @@ fi
 
 cron_failure_claude_dir="$test_root/cron-failure-claude"
 cron_failure_codex_dir="$test_root/cron-failure-codex"
-cron_failure_track_root="$test_root/cron-failure-tracks"
-if TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/failure/cron --source "$source_root" --claude-dir "$cron_failure_claude_dir" --codex-dir "$cron_failure_codex_dir" --track-root "$cron_failure_track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/failing-crontab"; then
+cron_failure_track_root="$test_root/cron-failure-parent/nested/tracks"
+cron_failure_data="$test_root/cron-failure-data"
+if XDG_DATA_HOME="$cron_failure_data" run_track https://github.com/failure/cron --claude-dir "$cron_failure_claude_dir" --codex-dir "$cron_failure_codex_dir" --track-root "$cron_failure_track_root" --cron-bin "$track_bin/failing-crontab"; then
   fail 'track mode accepted a crontab failure'
 fi
 [[ ! -e "$cron_failure_claude_dir" && ! -e "$cron_failure_codex_dir" ]] || fail 'crontab failure left local configuration changes'
-[[ ! -e "$cron_failure_track_root" ]] || fail 'crontab failure left a tracking directory'
-[[ ! -e "$runner_root/failure" ]] || fail 'crontab failure left a monitor runner'
+[[ ! -e "$test_root/cron-failure-parent" ]] || fail 'crontab failure left created tracking parent directories'
+[[ ! -e "$cron_failure_data" ]] || fail 'crontab failure left created runner parent directories'
 
 runner_before_failure="$(<"$runner_path")"
-if TEST_CRON_FILE="$cron_file" "$installer" --track https://github.com/example/demo --source "$source_root" --claude-dir "$track_claude_dir" --codex-dir "$track_codex_dir" --track-root "$track_root" --git-bin "$track_bin/git" --cron-bin "$track_bin/failing-crontab"; then
+attacker_file="$test_root/attacker-target"
+printf 'untouched\n' > "$attacker_file"
+ln -s "$attacker_file" "$runner_root/example/demo/.monitor.previous"
+if run_track https://github.com/example/demo --cron-bin "$track_bin/failing-crontab"; then
   fail 'track mode accepted a crontab failure while updating a runner'
 fi
 [[ "$(<"$runner_path")" == "$runner_before_failure" ]] || fail 'crontab failure did not restore the previous monitor runner'
-[[ ! -e "$runner_root/example/demo/.monitor.previous" ]] || fail 'crontab failure left a runner backup'
+[[ "$(<"$attacker_file")" == 'untouched' ]] || fail 'runner backup followed a planted symbolic link'
+rm -f "$runner_root/example/demo/.monitor.previous"
+if find "$runner_root/example/demo" -name '.monitor.previous*' | grep -q .; then
+  fail 'crontab failure left a runner backup'
+fi
+
+sabotage_claude_dir="$test_root/sabotage-claude"
+sabotage_data="$test_root/sabotage-data"
+sabotage_track_root="$test_root/sabotage-tracks"
+sabotage_output="$test_root/sabotage.out"
+if SABOTAGE_TARGET="$sabotage_claude_dir/CLAUDE.md" XDG_DATA_HOME="$sabotage_data" run_track https://github.com/sabotage/demo --claude-dir "$sabotage_claude_dir" --codex-dir "$test_root/sabotage-codex" --track-root "$sabotage_track_root" --cron-bin "$track_bin/failing-crontab" 2>"$sabotage_output"; then
+  fail 'track mode accepted a crontab failure with an unrecoverable link'
+fi
+grep -F 'rollback was incomplete' "$sabotage_output" >/dev/null || fail 'incomplete link rollback was not reported'
+[[ ! -e "$sabotage_track_root" ]] || fail 'incomplete link rollback skipped tracking rollback for the clone'
+[[ ! -e "$sabotage_data" ]] || fail 'incomplete link rollback skipped tracking rollback for the runner'
 
 printf 'PASS: installer behavior\n'
