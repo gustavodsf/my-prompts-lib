@@ -424,6 +424,13 @@ printf '%s\n' \
   'exit 1' > "$track_bin/gh"
 chmod +x "$track_bin/gh"
 
+mkdir -p "$source_root/lanes"
+printf '#!/usr/bin/env bash\nprintf lane-runner-v1\n' > "$source_root/scripts/lane.sh"
+chmod +x "$source_root/scripts/lane.sh"
+printf 'issue prompt v1\n' > "$source_root/lanes/issue.md"
+printf 'ci prompt v1\n' > "$source_root/lanes/ci.md"
+printf '{"permissions":{"deny":["Bash(sudo *)"]}}\n' > "$source_root/lanes/deny.json"
+
 lane_checkout="$test_root/lane-project/app"
 mkdir -p "$lane_checkout/.git"
 printf 'https://github.com/lanes/demo\n' > "$lane_checkout/.git/origin-url"
@@ -513,5 +520,79 @@ fi
 : > "$gh_log"
 run_track https://github.com/nolanes/demo --gh-bin "$track_bin/gh" --dry-run > /dev/null || fail 'installer rejected track mode without lanes'
 [[ ! -s "$gh_log" ]] || fail 'installer called gh without lanes'
+
+assert_private() {
+  [[ -z "$(find "$1" -prune \( -perm -0040 -o -perm -0004 -o -perm -0020 -o -perm -0002 \) -print)" ]] || fail "$2 is not private: $1"
+}
+
+assert_lane_files() {
+  local version="$1"
+  [[ -x "$lane_runner_dir/lane.sh" && ! -L "$lane_runner_dir/lane.sh" ]] || fail 'lane runner was not installed as an executable file'
+  assert_private "$lane_runner_dir/lane.sh" 'lane runner'
+  grep -qF "lane-runner-$version" "$lane_runner_dir/lane.sh" || fail "lane runner is not $version"
+  grep -qxF "issue prompt $version" "$lane_runner_dir/lanes/issue.md" || fail "issue prompt is not $version"
+  grep -qxF "ci prompt $version" "$lane_runner_dir/lanes/ci.md" || fail "ci prompt is not $version"
+  cmp -s "$source_root/lanes/deny.json" "$lane_runner_dir/lanes/deny.json" || fail 'deny rules were not copied'
+  assert_private "$lane_runner_dir/lanes" 'lane prompt directory'
+  for directory in state logs; do
+    [[ -d "$lane_runner_dir/$directory" ]] || fail "lane $directory directory was not created"
+    assert_private "$lane_runner_dir/$directory" "lane $directory directory"
+  done
+}
+
+run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" > /dev/null || fail 'installer failed to install lanes'
+assert_lane_files v1
+lane_parent="$(dirname "$lane_checkout")"
+expected_conf="$(printf '%s\n' \
+  'repo=lanes/demo' \
+  'owner=lane-owner' \
+  "checkout=$lane_checkout" \
+  "worktrees=$lane_parent/worktrees" \
+  "docs=$lane_parent/docs" \
+  "state=$lane_runner_dir/state" \
+  'evidence_branch=qa-evidence')"
+[[ "$(cat "$lane_runner_dir/project.conf")" == "$expected_conf" ]] || fail "unexpected lane configuration: $(cat "$lane_runner_dir/project.conf")"
+assert_private "$lane_runner_dir/project.conf" 'lane configuration'
+if find "$lane_claude_dir" "$lane_codex_dir" \( -name 'lane.sh' -o -name 'deny.json' -o -name 'project.conf' -o -lname "*/lanes*" -o -lname '*lane.sh' \) -print | grep -q .; then
+  fail 'lane files leaked into the assistant configuration directories'
+fi
+[[ ! -e "$lane_claude_dir/lanes" && ! -e "$lane_codex_dir/lanes" ]] || fail 'lane prompts were linked into the assistant configuration'
+if find "$lane_runner_dir" -name '.lanes.*' | grep -q .; then
+  fail 'lane installation left staging or backup files'
+fi
+
+printf '#!/usr/bin/env bash\nprintf lane-runner-v2\n' > "$source_root/scripts/lane.sh"
+printf 'issue prompt v2\n' > "$source_root/lanes/issue.md"
+printf 'ci prompt v2\n' > "$source_root/lanes/ci.md"
+assert_lane_files v1
+
+if run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" --owner other-owner --cron-bin "$track_bin/failing-crontab" 2>/dev/null; then
+  fail 'installer accepted a crontab failure while updating lanes'
+fi
+assert_lane_files v1
+grep -qx 'owner=lane-owner' "$lane_runner_dir/project.conf" || fail 'crontab failure did not restore the lane configuration'
+if find "$lane_runner_dir" -name '.lanes.*' | grep -q .; then
+  fail 'lane rollback left staging or backup files'
+fi
+
+run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" > /dev/null || fail 'installer failed to reinstall lanes'
+assert_lane_files v2
+
+fresh_lane_data="$test_root/fresh-lane-data"
+if XDG_DATA_HOME="$fresh_lane_data" run_lanes https://github.com/lanes/demo --lanes issue --checkout "$lane_checkout" --cron-bin "$track_bin/failing-crontab" 2>/dev/null; then
+  fail 'installer accepted a crontab failure during a fresh lane install'
+fi
+[[ ! -e "$fresh_lane_data" ]] || fail 'fresh lane install failure left runner files behind'
+
+mv "$source_root/lanes/ci.md" "$source_root/lanes/ci.md.hidden"
+cron_before_missing_source="$(cat "$cron_file")"
+if run_lanes https://github.com/lanes/demo --lanes ci --checkout "$lane_checkout" 2> "$test_root/lane.err"; then
+  fail 'installer accepted a source clone without lane prompts'
+fi
+grep -qF 'lane source' "$test_root/lane.err" || fail "installer did not explain the missing lane source: $(cat "$test_root/lane.err")"
+[[ ! -e "$lane_claude_dir" && ! -e "$lane_track_root" ]] || fail 'missing lane source changed local state'
+[[ "$(cat "$cron_file")" == "$cron_before_missing_source" ]] || fail 'missing lane source changed the crontab'
+assert_lane_files v2
+mv "$source_root/lanes/ci.md.hidden" "$source_root/lanes/ci.md"
 
 printf 'PASS: installer behavior\n'

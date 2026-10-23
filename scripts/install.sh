@@ -18,6 +18,8 @@ lanes=""
 lane_names=()
 checkout=""
 owner=""
+lane_backup_dir=""
+lane_created_paths=()
 track_error=""
 track_created_repository=""
 track_created_dirs=()
@@ -242,6 +244,96 @@ install_runner() {
   printf 'Installed managed monitor runner at %s\n' "$runner_path"
 }
 
+write_lane_config() {
+  local runner_dir="$1"
+  local project_dir
+
+  project_dir="$(dirname "$checkout")"
+  printf '%s\n' \
+    "repo=${track_owner}/${track_repository}" \
+    "owner=$owner" \
+    "checkout=$checkout" \
+    "worktrees=$project_dir/worktrees" \
+    "docs=$project_dir/docs" \
+    "state=$runner_dir/state" \
+    'evidence_branch=qa-evidence'
+}
+
+# The previous lane set is kept until the crontab update succeeds so a failure restores it intact.
+install_lane_files() {
+  local runner_dir="$1"
+  local staging
+  local entry
+  local file
+
+  for entry in lane.sh lanes project.conf state logs; do
+    [[ ! -L "$runner_dir/$entry" ]] || { track_fail "lane path must not be a symbolic link: $runner_dir/$entry"; return 1; }
+  done
+
+  lane_backup_dir="$(mktemp -d "$runner_dir/.lanes.previous.XXXXXX")" || { lane_backup_dir=""; track_fail "could not preserve existing lane files in $runner_dir"; return 1; }
+  for entry in lane.sh lanes project.conf; do
+    if [[ -e "$runner_dir/$entry" ]]; then
+      cp -Rp -- "$runner_dir/$entry" "$lane_backup_dir/$entry" || { track_fail "could not preserve existing lane file: $runner_dir/$entry"; return 1; }
+    else
+      lane_created_paths+=("$runner_dir/$entry")
+    fi
+  done
+  for entry in state logs; do
+    if [[ ! -e "$runner_dir/$entry" ]]; then
+      mkdir -m 700 -- "$runner_dir/$entry" || { track_fail "could not create lane directory: $runner_dir/$entry"; return 1; }
+      lane_created_paths+=("$runner_dir/$entry")
+    fi
+  done
+
+  staging="$(mktemp -d "$runner_dir/.lanes.staged.XXXXXX")" || { track_fail "could not stage lane files in $runner_dir"; return 1; }
+  if ! cp -- "$source_dir/scripts/lane.sh" "$staging/lane.sh" || ! chmod 700 "$staging/lane.sh" \
+    || ! mkdir -m 700 "$staging/lanes" \
+    || ! write_lane_config "$runner_dir" > "$staging/project.conf" || ! chmod 600 "$staging/project.conf"; then
+    rm -rf -- "$staging"
+    track_fail "could not stage lane files in $runner_dir"
+    return 1
+  fi
+  for file in issue.md ci.md deny.json; do
+    if ! cp -- "$source_dir/lanes/$file" "$staging/lanes/$file" || ! chmod 600 "$staging/lanes/$file"; then
+      rm -rf -- "$staging"
+      track_fail "could not stage lane file: $file"
+      return 1
+    fi
+  done
+
+  if ! rm -rf -- "$runner_dir/lanes" || ! mv -- "$staging/lanes" "$runner_dir/lanes" \
+    || ! mv -f -- "$staging/lane.sh" "$runner_dir/lane.sh" || ! mv -f -- "$staging/project.conf" "$runner_dir/project.conf"; then
+    rm -rf -- "$staging"
+    track_fail "could not install lane files in $runner_dir"
+    return 1
+  fi
+  rmdir -- "$staging"
+  printf 'Installed lane runner, prompts and configuration in %s\n' "$runner_dir"
+}
+
+rollback_lane_files() {
+  local runner_dir
+  local entry
+  local index
+  local rollback_failed=0
+
+  for ((index = ${#lane_created_paths[@]} - 1; index >= 0; index--)); do
+    rm -rf -- "${lane_created_paths[$index]}" || rollback_failed=1
+  done
+  lane_created_paths=()
+  if [[ -n "$lane_backup_dir" ]]; then
+    runner_dir="$(dirname "$lane_backup_dir")"
+    for entry in lane.sh lanes project.conf; do
+      [[ -e "$lane_backup_dir/$entry" ]] || continue
+      rm -rf -- "${runner_dir:?}/$entry" && mv -- "$lane_backup_dir/$entry" "$runner_dir/$entry" || rollback_failed=1
+    done
+    rm -rf -- "$lane_backup_dir" || rollback_failed=1
+    lane_backup_dir=""
+  fi
+
+  [[ "$rollback_failed" -eq 0 ]]
+}
+
 write_crontab() {
   local work_dir="$1"
   local marker="$2"
@@ -280,6 +372,9 @@ schedule_tracking() {
   fi
 
   install_runner "$runner_path" || return 1
+  if [[ -n "$lanes" ]]; then
+    install_lane_files "$(dirname "$runner_path")" || return 1
+  fi
 
   # Stdout is discarded; stderr is truncated each run so only the latest failure is kept.
   cron_line="*/15 * * * * $(quote_for_shell "$runner_path") --scheduled --repo $(quote_for_shell "$repository_dir") >/dev/null 2> $(quote_for_shell "$error_log") $marker"
@@ -291,6 +386,9 @@ schedule_tracking() {
   rm -rf -- "$work_dir"
   [[ -z "$track_previous_runner" ]] || rm -f -- "$track_previous_runner"
   track_previous_runner=""
+  [[ -z "$lane_backup_dir" ]] || rm -rf -- "$lane_backup_dir"
+  lane_backup_dir=""
+  lane_created_paths=()
   printf 'Scheduled 15-minute read-only monitor for %s/%s\n' "$track_owner" "$track_repository"
 }
 
@@ -324,6 +422,8 @@ prepare_tracking() {
 }
 
 validate_lane_options() {
+  local source_file
+
   if [[ -z "$lanes" ]]; then
     [[ -z "$checkout" ]] || fail '--checkout requires --lanes'
     [[ -z "$owner" ]] || fail '--owner requires --lanes'
@@ -344,6 +444,9 @@ validate_lane_options() {
   verify_tracking_origin "$checkout" || fail "checkout origin does not match requested URL: $checkout"
   validate_cron_path "$checkout"
   validate_cron_path "$(dirname "$checkout")"
+  for source_file in scripts/lane.sh lanes/issue.md lanes/ci.md lanes/deny.json; do
+    [[ -f "$source_dir/$source_file" ]] || fail "lane source file is missing: $source_dir/$source_file"
+  done
 
   if [[ -z "$owner" ]]; then
     owner="$("$gh_bin" api user --jq .login 2>/dev/null)" || fail 'could not resolve the GitHub owner with gh; pass --owner'
@@ -527,6 +630,7 @@ rollback_installation() {
 rollback_tracking() {
   local rollback_failed=0
 
+  rollback_lane_files || rollback_failed=1
   if [[ -n "$track_previous_runner" ]]; then
     mv -f -- "$track_previous_runner" "$(dirname "$track_previous_runner")/monitor.sh" || rollback_failed=1
   elif [[ -n "$track_created_runner" && -e "$track_created_runner" ]]; then
