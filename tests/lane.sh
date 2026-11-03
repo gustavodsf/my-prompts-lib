@@ -43,6 +43,8 @@ new_runner() {
   printf 'ISSUE LANE PROMPT\n' > "$runner/lanes/issue.md"
   printf 'CI LANE PROMPT\n' > "$runner/lanes/ci.md"
   printf '{"permissions":{"deny":[]}}\n' > "$runner/lanes/deny.json"
+  cp "$repo_root/sdlc/agents.yml" "$runner/lanes/agents.yml"
+  cp "$repo_root/scripts/resolve-agents.sh" "$repo_root/scripts/agent-run.sh" "$runner/"
   printf '%s\n' "$runner"
 }
 
@@ -391,7 +393,7 @@ assert_lane_prompt() {
   done
 }
 
-assert_lane_prompt issue sdlc-project-context sdlc-plan sdlc-review sdlc-qa sdlc-evidence sdlc-pr
+assert_lane_prompt issue sdlc-intake sdlc-project-context sdlc-plan sdlc-review sdlc-qa sdlc-evidence sdlc-pr
 assert_lane_prompt ci sdlc-pr sdlc-review
 for gate in 'aprovado' 'aprovado: 1, 3' 'evidence_branch'; do
   grep -qF "$gate" "$lanes_dir/issue.md" || fail "issue lane prompt does not cover: $gate"
@@ -417,5 +419,74 @@ for prompt in issue ci; do
     grep -qF "$rule" "$lanes_dir/$prompt.md" || fail "$prompt lane prompt does not guard comment trust: $rule"
   done
 done
+
+# Agents table: resolved into the prompt, validated before Claude runs, with one fallback rule.
+agents_runner="$(new_runner agents)"
+write_valid_conf "$agents_runner"
+printf 'grok_bin=%s\n' "$fake_bin/codex" >> "$agents_runner/project.conf"
+: > "$call_log"
+cat > "$fake_bin/claude" <<'FAKE'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$LANE_TEST_LOG"
+cat >> "$LANE_TEST_LOG"
+FAKE
+run_lane "$agents_runner" issue || fail 'lane rejected a valid agents table'
+grep -qF 'agents: design=claude goldfish=grok implement=codex review=claude tiebreak=grok' "$call_log" \
+  || fail "issue prompt does not carry the resolved agents: $(cat "$call_log")"
+run_lane "$agents_runner" ci || fail 'ci lane rejected a valid agents table'
+grep -qF 'implement=claude review=codex' "$call_log" || fail 'ci lane review agent is not independent of the claude fixer'
+nogrok="$(new_runner nogrok)"
+write_valid_conf "$nogrok"
+: > "$call_log"
+run_lane "$nogrok" issue || fail 'lane rejected a table whose goldfish falls back'
+grep -qF 'goldfish=claude' "$call_log" || fail 'goldfish without grok does not fall back to a clean claude process'
+grep -qF 'tiebreak=human' "$call_log" || fail 'tiebreak without a third agent does not fall back to the owner'
+badtable="$(new_runner badtable)"
+write_valid_conf "$badtable"
+sed -i 's/^  implement: codex/  implement: grok/' "$badtable/lanes/agents.yml"
+expect_rejection 'a read-only agent in the implement phase' 'write-capable' "$badtable" issue
+nobin="$(new_runner nobin)"
+write_valid_conf "$nobin"
+printf 'grok_bin=%s\n' "$absent/grok" >> "$nobin/project.conf"
+expect_rejection 'a configured but missing grok binary' 'grok' "$nobin" issue
+
+# agent-run.sh: guardrails for non-interactive agents.
+guard="$(new_runner guard)"
+write_valid_conf "$guard"
+printf '%s\n' '#!/usr/bin/env bash' 'printf "codex %s\n" "$*" >> "$LANE_TEST_LOG"' \
+  'printf "env lane=%s token=%s push=%s\n" "$APOLO_SDLC_LANE" "${GH_TOKEN:-none}" "$(git config remote.origin.pushurl)" >> "$LANE_TEST_LOG"' > "$test_root/codex-guard"
+chmod +x "$test_root/codex-guard"
+sed -i "s|^codex_bin=.*|codex_bin=$test_root/codex-guard|" "$guard/project.conf"
+printf 'task\n' > "$test_root/task.md"
+: > "$call_log"
+GH_TOKEN=secret LANE_TEST_LOG="$call_log" PATH="/usr/bin:/bin" "$guard/agent-run.sh" implement "$test_root/task.md" "$checkout" "$test_root/metrics.md" \
+  || fail 'agent-run.sh failed for implement'
+grep -qF -- '--ask-for-approval never exec --sandbox workspace-write' "$call_log" || fail "codex is not run without approvals in workspace-write: $(cat "$call_log")"
+grep -qF 'env lane=issue token=none push=no-push://' "$call_log" || fail "codex runs with a token or a push URL: $(cat "$call_log")"
+grep -qF '| implement | codex |' "$test_root/metrics.md" || fail 'agent-run.sh does not append metrics'
+
+# Goldfish panel: parallel lenses, alternating agents, aggregated verdict, no files kept.
+panel="$(new_runner panel)"
+write_valid_conf "$panel"
+printf '%s\n' '#!/usr/bin/env bash' 'grep -q "Lens: security" "$2" && echo "Verdict: Fail" || echo "Verdict: Partial"' > "$test_root/grok-fake"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "Verdict: Pass"' > "$test_root/claude-panel"
+chmod +x "$test_root/grok-fake" "$test_root/claude-panel"
+sed -i "s|^claude_bin=.*|claude_bin=$test_root/claude-panel|" "$panel/project.conf"
+printf 'grok_bin=%s\n' "$test_root/grok-fake" >> "$panel/project.conf"
+mkdir -p "$test_root/tmp"
+if TMPDIR="$test_root/tmp" "$panel/agent-run.sh" goldfish-panel "$test_root/task.md" "$checkout" "$test_root/panel.md" feature > "$test_root/panel.out"; then
+  fail 'goldfish panel passed despite a failing lens'
+fi
+grep -qF 'PANEL: FAIL' "$test_root/panel.out" || fail "goldfish panel did not block on Fail: $(cat "$test_root/panel.out")"
+for lens in comprehension adversarial security testability simplicity; do
+  grep -qE "^### $lens \((grok|claude)\)" "$test_root/panel.out" || fail "goldfish panel skipped the $lens lens"
+done
+grep -qF '### comprehension (grok): Partial' "$test_root/panel.out" && grep -qF '### adversarial (claude): Pass' "$test_root/panel.out" \
+  || fail 'goldfish panel does not alternate grok and claude'
+"$panel/agent-run.sh" goldfish-panel "$test_root/task.md" "$checkout" '' bug > "$test_root/panel.out" || fail 'bug panel failed'
+[[ "$(grep -c '^### ' "$test_root/panel.out")" == 2 ]] && grep -qF 'PANEL: PARTIAL' "$test_root/panel.out" \
+  || fail "bug panel must run comprehension and testability only: $(cat "$test_root/panel.out")"
+grep -qF '| goldfish:security | grok |' "$test_root/panel.md" || fail 'goldfish panel does not record metrics per lens'
+[[ -z "$(ls -A "$test_root/tmp")" ]] || fail 'goldfish panel left files behind'
 
 printf 'PASS: lane behavior\n'

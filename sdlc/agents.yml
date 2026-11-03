@@ -1,18 +1,33 @@
-# Agent per SDLC phase. Edit here only; skills and lanes read this file.
-# Rule: an agent never reviews its own output (see sdlc/SDLC.md#agents-per-phase).
+# Agent per SDLC phase. Edit here only; skills, lanes and scripts/resolve-agents.sh read it.
+# Rule: an agent never reviews its own output (sdlc/SDLC.md#agents-per-phase).
 phases:
-  design: claude          # Elephant: drafts design.md
-  goldfish: grok          # context-free check of design.md; must differ from design
-  implement: codex        # acceptance tests first, then code
-  review: claude          # PR/feature review; must differ from implement
-  tiebreak: gemini        # third agent when review and implementer disagree
+  design: claude          # Elephant: drafts design.md (must be write-capable)
+  goldfish: grok          # context-free check of design.md, fresh process
+  implement: codex        # acceptance tests first, then code (must be write-capable)
+  review: claude          # PR/feature review; never the implementer
+  tiebreak: grok          # third agent when review and implementer disagree
 
-# How to start each agent non-interactively. claude and codex are the CLIs the
-# lanes already use (scripts/lane.sh: claude_bin, codex_bin). grok and gemini have
-# no integration in this repo yet: set the command you actually have installed.
-# {prompt_file} is replaced with the path of the prompt to run.
-agents:
-  claude: 'claude -p < {prompt_file}'
-  codex: 'codex exec - < {prompt_file}'
-  grok: ''                # e.g. your Grok CLI; empty = unavailable
-  gemini: ''              # e.g. 'gemini -p "$(cat {prompt_file})"'; empty = unavailable
+# Goldfish panel: parallel context-free reviewers, one lens each (sdlc/goldfish.md).
+# Agents alternate over this list per lens; unavailable ones drop out (fallback: fresh design agent).
+goldfish_agents: grok claude
+goldfish_lenses:
+  bug: comprehension testability
+  feature: comprehension adversarial security testability simplicity
+
+# Non-interactive command per agent. Placeholders: {bin} (from project.conf or PATH),
+# {prompt_file}, {cwd}, {sandbox} (workspace-write for implement, read-only otherwise),
+# {deny_file} (lane deny rules). Empty = unavailable; the fallback rule applies.
+commands:
+  # Claude Code print mode, as scripts/lane.sh already runs it.
+  claude: '{bin} -p --settings {deny_file} --max-turns 60 < {prompt_file}'
+  # https://developers.openai.com/codex/noninteractive : codex exec never prompts; --sandbox sets
+  # the boundary. --ask-for-approval must precede `exec` (openai/codex#26602).
+  codex: '{bin} --ask-for-approval never exec --sandbox {sandbox} -C {cwd} - < {prompt_file}'
+  # xAI Grok Build CLI headless mode: https://docs.x.ai/build/cli/headless-scripting
+  # (-p/--prompt-file, --cwd, --output-format, --no-auto-update). Headless does not read stdin.
+  grok: '{bin} --prompt-file {prompt_file} --cwd {cwd} --no-auto-update --output-format plain'
+  # Gemini CLI has no integration here yet; set your command to enable it.
+  gemini: ''
+
+# Agents allowed in write phases (design, implement). Others are read-only reviewers.
+write_capable: claude codex

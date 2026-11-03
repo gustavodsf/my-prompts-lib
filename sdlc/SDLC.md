@@ -24,7 +24,7 @@ Keep two layers, and nothing else:
 
 `codemap.md` is generated from the code (`codemap.mjs` in `sdlc-project-context`, or `npx repomix --compress` for non-TypeScript projects) and never hand-written. Grep it on demand. Hand-written documents never list method or function names.
 
-Before implementation, the design passes the [Goldfish check](goldfish.md): a context-free subagent must explain it back and confirm its symbols exist.
+Before implementation, the design passes the [Goldfish check](goldfish.md): a parallel panel of context-free reviewers (one lens each: comprehension, adversarial, security, testability, simplicity; bugs run comprehension and testability) grades it Pass/Partial/Fail; any Fail blocks.
 
 Keep all task and context Markdown out of commits. Versioned configuration under `sdlc/` and `README.md` may be committed.
 
@@ -33,7 +33,8 @@ Keep all task and context Markdown out of commits. Versioned configuration under
 When the pull request is open (or the task is abandoned):
 
 1. **Promote** only what is durable: new or changed rules to `business-rules.md`, decisions to `decisions.md`, structural changes to `architecture.md`; regenerate `codemap.md`; update `INDEX.md`.
-2. **Archive or delete** `project-doc/<task-or-issue-id>/` (move to `project-doc/_archive/` if you want history). Nothing in the task folder is read again.
+2. **Archive or delete** `project-doc/<task-or-issue-id>/` (move to `project-doc/_archive/` if you want history; the issue lane moves `<specDir>` to `<docs>/archive/` after the merge). Nothing in the task folder is read again.
+3. **AIDOS card (optional).** `skills/sdlc-plan/aidos-card.sh <design.md>` prints the four blocks (Problem → Solution → Tech Design → Testing) for a hand-off or a PR description.
 
 **By-the-way work** found during a task never gets its own document: add one line under `By-the-way backlog` in `INDEX.md` (`BTW-NN: <what> (<where>)`) or open an issue when authorized.
 
@@ -59,16 +60,18 @@ Write a failing test when meaningful. When it is not meaningful, obtain approval
 
 Code comments must be minimal. Add one only for a non-obvious invariant, constraint, compatibility need, security tradeoff, or performance reason.
 
-Review follows [Agents per phase](#agents-per-phase): the reviewer is never the implementer. If the required reviewer is unavailable, do not report the review as complete. Use the `sdlc-review` skill; after corrections, run it in delta mode so follow-up reviews verify only the correction diff. Open pull requests and handle reviewer comments with `sdlc-pr`.
+Review follows [Agents per phase](#agents-per-phase): the reviewer is never the implementer. If the required reviewer is unavailable, do not report the review as complete. A standalone `sdlc-review` writes nothing; an SDLC feature review (guided or lane) keeps its record in the task folder as `review.md`, never committed and archived with the folder. Use the `sdlc-review` skill; after corrections, run it in delta mode so follow-up reviews verify only the correction diff. Open pull requests and handle reviewer comments with `sdlc-pr`.
 
 Use `error.md` during planning, QA, and review. A repeated failure becomes an error-catalog rule with a prevention check.
 
 ## Agents per phase
 
-[agents.yml](agents.yml) assigns an agent to each phase: `design` (Elephant, default claude), `goldfish` (default grok), `implement` (default codex), `review`, and `tiebreak` (a third agent). Allowed agents: claude, codex, grok, gemini.
+[agents.yml](agents.yml) assigns an agent to each phase: `design` (Elephant, default claude), `goldfish` (default grok; the panel alternates `goldfish_agents`, default grok then a fresh claude), `implement` (default codex), `review`, and `tiebreak` (a third agent). Allowed agents: claude, codex, grok, gemini.
 
 - **An agent never reviews its own output.** `goldfish` ≠ `design`; `review` ≠ `implement`; `tiebreak` differs from both `implement` and `review`.
-- An agent with an empty command in `agents.yml` is unavailable: record the limitation and use the next agent that satisfies the rule; never fall back to self-review.
+- **Available** = non-empty command in `agents.yml` and a known binary (`<agent>_bin` in the lane's `project.conf`, otherwise `PATH`). CLIs are never guessed: no command, no agent.
+- **One fallback rule**, applied by [`scripts/resolve-agents.sh`](../scripts/resolve-agents.sh) before anything runs: `design` and `implement` must be available and listed in `write_capable`, or the run stops. `goldfish` falls back to a fresh `design`-agent process (clean context). `review` falls back to the first available agent ≠ implementer, else it is blocked. `tiebreak` falls back to the first available agent ∉ {implementer, reviewer}, else the human owner. Never self-review.
+- **Guardrails.** Lanes run every non-design agent through `agent-run.sh`: no approvals inside the agent's sandbox (Codex `workspace-write` to implement, `read-only` otherwise), `APOLO_SDLC_LANE`/`APOLO_SDLC_PHASE` exported, GitHub tokens removed and push disabled. Only the lane's Claude session pushes.
 - The tie-break runs only when the reviewer and implementer disagree on a finding after one round; its verdict decides.
 
 ## Metrics
