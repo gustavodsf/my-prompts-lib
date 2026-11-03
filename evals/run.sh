@@ -33,6 +33,11 @@ done
 [[ "$g" != "$d" ]] || bad 'agents.yml: goldfish equals design'
 [[ "$r" != "$i" ]] || bad 'agents.yml: review equals implement'
 [[ "$t" != "$i" && "$t" != "$r" ]] || bad 'agents.yml: tiebreak equals implement or review'
+# The resolver accepts the table when every agent with a command is installed.
+tmp="$(mktemp -d)"; : > "$tmp/conf"
+for a in claude codex grok gemini; do printf '#!/bin/sh\n' > "$tmp/$a"; chmod +x "$tmp/$a"; printf '%s_bin=%s\n' "$a" "$tmp/$a" >> "$tmp/conf"; done
+bash "$root/scripts/resolve-agents.sh" "$root/sdlc/agents.yml" "$tmp/conf" > /dev/null || bad 'agents.yml: rejected by scripts/resolve-agents.sh'
+rm -rf "$tmp"
 
 # 4. Agent evals
 if [[ "${1:-}" == '--agent' ]]; then

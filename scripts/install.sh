@@ -25,6 +25,8 @@ lane_claude_bin=""
 lane_gh_bin=""
 lane_git_bin=""
 lane_codex_bin=""
+lane_grok_bin=""
+lane_gemini_bin=""
 track_error=""
 track_created_repository=""
 track_created_dirs=()
@@ -269,6 +271,8 @@ write_lane_config() {
     "gh_bin=$lane_gh_bin" \
     "git_bin=$lane_git_bin"
   [[ -z "$lane_codex_bin" ]] || printf 'codex_bin=%s\n' "$lane_codex_bin"
+  [[ -z "$lane_grok_bin" ]] || printf 'grok_bin=%s\n' "$lane_grok_bin"
+  [[ -z "$lane_gemini_bin" ]] || printf 'gemini_bin=%s\n' "$lane_gemini_bin"
 }
 
 # The versioned rules cannot name this runner, so the lane is denied edits to its own runner files here.
@@ -280,6 +284,8 @@ render_runner_denies() {
   for rule in "Edit(/$runner_dir/lane.sh)" "Write(/$runner_dir/lane.sh)" \
     "Edit(/$runner_dir/lanes/**)" "Write(/$runner_dir/lanes/**)" \
     "Edit(/$runner_dir/project.conf)" "Write(/$runner_dir/project.conf)" \
+    "Edit(/$runner_dir/agent-run.sh)" "Write(/$runner_dir/agent-run.sh)" \
+    "Edit(/$runner_dir/resolve-agents.sh)" "Write(/$runner_dir/resolve-agents.sh)" \
     "Bash(*$runner_dir/lanes*)" "Bash(*$runner_dir/lane.sh*)" "Bash(*$runner_dir/project.conf*)"; do
     rules+="\"$rule\","
   done
@@ -293,12 +299,12 @@ install_lane_files() {
   local entry
   local file
 
-  for entry in lane.sh lanes project.conf state logs; do
+  for entry in lane.sh agent-run.sh resolve-agents.sh lanes project.conf state logs; do
     [[ ! -L "$runner_dir/$entry" ]] || { track_fail "lane path must not be a symbolic link: $runner_dir/$entry"; return 1; }
   done
 
   lane_backup_dir="$(mktemp -d "$runner_dir/.lanes.previous.XXXXXX")" || { lane_backup_dir=""; track_fail "could not preserve existing lane files in $runner_dir"; return 1; }
-  for entry in lane.sh lanes project.conf; do
+  for entry in lane.sh agent-run.sh resolve-agents.sh lanes project.conf; do
     if [[ -e "$runner_dir/$entry" ]]; then
       cp -Rp -- "$runner_dir/$entry" "$lane_backup_dir/$entry" || { track_fail "could not preserve existing lane file: $runner_dir/$entry"; return 1; }
     else
@@ -320,8 +326,15 @@ install_lane_files() {
     track_fail "could not stage lane files in $runner_dir"
     return 1
   fi
-  for file in issue.md ci.md; do
-    if ! cp -- "$source_dir/lanes/$file" "$staging/lanes/$file" || ! chmod 600 "$staging/lanes/$file"; then
+  for file in agent-run.sh resolve-agents.sh; do
+    if ! cp -- "$source_dir/scripts/$file" "$staging/$file" || ! chmod 700 "$staging/$file"; then
+      rm -rf -- "$staging"
+      track_fail "could not stage lane file: $file"
+      return 1
+    fi
+  done
+  for file in issue.md ci.md ../sdlc/agents.yml; do
+    if ! cp -- "$source_dir/lanes/$file" "$staging/lanes/${file##*/}" || ! chmod 600 "$staging/lanes/${file##*/}"; then
       rm -rf -- "$staging"
       track_fail "could not stage lane file: $file"
       return 1
@@ -333,9 +346,19 @@ install_lane_files() {
     track_fail "could not render lane deny rules for $runner_dir"
     return 1
   fi
+  local -a resolve_args=()
+  # A ci-only install has no implement phase; its fixer is the lane's claude session.
+  [[ "$lanes" == *issue* ]] || resolve_args=(--implementer claude)
+  if ! "$staging/resolve-agents.sh" "$staging/lanes/agents.yml" "$staging/project.conf" "${resolve_args[@]}" > /dev/null; then
+    rm -rf -- "$staging"
+    track_fail "agents table is not runnable with the detected tools (see sdlc/agents.yml)"
+    return 1
+  fi
 
   if ! rm -rf -- "$runner_dir/lanes" || ! mv -- "$staging/lanes" "$runner_dir/lanes" \
-    || ! mv -f -- "$staging/lane.sh" "$runner_dir/lane.sh" || ! mv -f -- "$staging/project.conf" "$runner_dir/project.conf"; then
+    || ! mv -f -- "$staging/lane.sh" "$runner_dir/lane.sh" \
+    || ! mv -f -- "$staging/agent-run.sh" "$runner_dir/agent-run.sh" \
+    || ! mv -f -- "$staging/resolve-agents.sh" "$runner_dir/resolve-agents.sh" || ! mv -f -- "$staging/project.conf" "$runner_dir/project.conf"; then
     rm -rf -- "$staging"
     track_fail "could not install lane files in $runner_dir"
     return 1
@@ -356,7 +379,7 @@ rollback_lane_files() {
   lane_created_paths=()
   if [[ -n "$lane_backup_dir" ]]; then
     runner_dir="$(dirname "$lane_backup_dir")"
-    for entry in lane.sh lanes project.conf; do
+    for entry in lane.sh agent-run.sh resolve-agents.sh lanes project.conf; do
       [[ -e "$lane_backup_dir/$entry" ]] || continue
       rm -rf -- "${runner_dir:?}/$entry" && mv -- "$lane_backup_dir/$entry" "$runner_dir/$entry" || rollback_failed=1
     done
@@ -474,10 +497,13 @@ build_lane_tools() {
   lane_git_bin="$(resolve_tool_path git "$git_bin")" || fail "git is required by the lanes but was not found: $git_bin"
   lane_codex_bin="$(resolve_tool_path codex "${CODEX_BIN:-codex}")" || lane_codex_bin=""
   [[ "$lanes" != *issue* || -n "$lane_codex_bin" ]] || fail "codex is required by the issue lane but was not found: ${CODEX_BIN:-codex}"
+  # Optional agents (sdlc/agents.yml): detected when present, otherwise the fallback rule applies.
+  lane_grok_bin="$(resolve_tool_path grok "${GROK_BIN:-grok}")" || lane_grok_bin=""
+  lane_gemini_bin="$(resolve_tool_path gemini "${GEMINI_BIN:-gemini}")" || lane_gemini_bin=""
 
   # npm-installed CLIs such as codex start with `env node`, so the lanes also need node's directory.
   tool_path="$(resolve_tool_path node "${NODE_BIN:-node}")" || tool_path=""
-  for tool_path in "$lane_claude_bin" "$lane_gh_bin" "$lane_git_bin" "$lane_codex_bin" "$tool_path"; do
+  for tool_path in "$lane_claude_bin" "$lane_gh_bin" "$lane_git_bin" "$lane_codex_bin" "$lane_grok_bin" "$lane_gemini_bin" "$tool_path"; do
     [[ -n "$tool_path" ]] || continue
     validate_cron_path "$tool_path"
     has_trusted_path "$(dirname "$tool_path")" || fail "tool directory is not trusted (writable by other users): $(dirname "$tool_path")"
@@ -589,7 +615,7 @@ validate_lane_options() {
   validate_cron_path "$checkout"
   validate_cron_path "$(dirname "$checkout")"
   validate_checkout_trust
-  for source_file in scripts/lane.sh lanes/issue.md lanes/ci.md lanes/deny.json; do
+  for source_file in scripts/lane.sh scripts/agent-run.sh scripts/resolve-agents.sh sdlc/agents.yml lanes/issue.md lanes/ci.md lanes/deny.json; do
     [[ -f "$source_dir/$source_file" ]] || fail "lane source file is missing: $source_dir/$source_file"
   done
   [[ "$runner_root" != *[\"\\\&\|\*\?\[]* ]] || fail "runner path cannot be written into deny rules safely: $runner_root"
