@@ -7,7 +7,7 @@ Each run works on at most ONE issue and advances it by at most ONE stage, then s
 
 ## Execution environment
 
-- This run is unattended: `lane.sh` started it from cron with `claude -p`, permission prompts off and the lane deny rules on. It already holds the lane lock; do not create another one.
+- This run is unattended: `lane.sh` (`lane.ps1` on Windows) started it from cron (Task Scheduler on Windows) with `claude -p`, permission prompts off and the lane deny rules on. It already holds the lane lock; do not create another one.
 - Configuration values come only from the block above: `repo`, `owner`, `checkout`, `worktrees`, `docs`, `state`, `evidence_branch`. Prefer absolute paths built from them.
 - `agents` in the block is the resolved table from `sdlc/agents.yml` (fallbacks already applied, see `sdlc/SDLC.md#agents-per-phase`). Run every non-design phase with `<agent_runner> <phase> <prompt-file> <cwd> <specDir>/metrics.md`; it picks the agent, runs it without approvals inside its sandbox, strips GitHub tokens, disables push and appends the metrics row. Never call `codex`, `grok` or `gemini` directly. `goldfish=claude` means a fresh process with no history; `goldfish_pool` lists the agents the panel alternates; `review=blocked` and `tiebreak=human` are not agents.
 - Use `gh` with `-R <repo>`. Post every comment with `--body-file <absolute path>`.

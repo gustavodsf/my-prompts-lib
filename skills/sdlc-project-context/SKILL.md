@@ -30,6 +30,7 @@ Regenerate, never hand-write:
 
 ```bash
 node <this-skill-dir>/codemap.mjs <repo-root> > project-doc/_project/codemap.md
+# Windows PowerShell: node <this-skill-dir>\codemap.mjs <repo-root> --out project-doc\_project\codemap.md
 ```
 
 [codemap.mjs](codemap.mjs) sits beside this file and needs the TypeScript 5.x compiler API from the project (`npm i -D typescript@5` if absent; TypeScript 7 has no JS API). For non-TypeScript projects use `npx repomix --compress --style markdown -o project-doc/_project/codemap.md`. Grep `codemap.md` on demand (`rg 'OrderService' codemap.md`) instead of reading it whole.

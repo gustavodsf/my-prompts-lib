@@ -5,6 +5,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 monitor="$repo_root/scripts/monitor.sh"
 monitor_batch="$repo_root/scripts/monitor.bat"
+monitor_ps1="$repo_root/scripts/monitor.ps1"
 test_root="$(mktemp -d)"
 trap 'rm -rf "$test_root"' EXIT
 
@@ -114,10 +115,11 @@ PATH="$fake_bin:$PATH" MONITOR_LOG="$log_file" "$monitor" --repo "$repo_a" --cle
 if rg -F 'Bash(curl *)' "$monitor_batch" >/dev/null || rg -F 'Bash(git push *)' "$monitor_batch" >/dev/null || rg -F 'Bash(gh issue comment *)' "$monitor_batch" >/dev/null || rg -F 'Bash(gh pr create *)' "$monitor_batch" >/dev/null; then
   fail 'Windows monitor retained direct external-write or curl permissions'
 fi
-rg -F 'authorize and clear cannot be used together' "$monitor_batch" >/dev/null || fail 'Windows monitor does not reject incompatible authorization flags'
-rg -F 'limit must be an integer from 1 to 50' "$monitor_batch" >/dev/null || fail 'Windows monitor does not cap polling'
-rg -F 'call :read_state' "$monitor_batch" >/dev/null || fail 'Windows monitor does not validate structured authorization state'
-if rg -F 'claude -p' "$monitor_batch" >/dev/null || rg -F 'github-write' "$monitor" >/dev/null; then
+rg -F 'monitor.ps1' "$monitor_batch" >/dev/null || fail 'Windows monitor.bat does not delegate to monitor.ps1'
+rg -F 'authorize and clear cannot be used together' "$monitor_ps1" >/dev/null || fail 'Windows monitor does not reject incompatible authorization flags'
+rg -F 'limit must be an integer from 1 to $maxLimit' "$monitor_ps1" >/dev/null || fail 'Windows monitor does not cap polling'
+rg -F 'function Read-State' "$monitor_ps1" >/dev/null || fail 'Windows monitor does not validate structured authorization state'
+if rg -F 'claude' "$monitor_ps1" | rg -v 'Never starts Claude|without starting Claude' >/dev/null || rg -F 'claude -p' "$monitor_batch" >/dev/null || rg -F 'github-write' "$monitor" >/dev/null; then
   fail 'scheduled monitor retained an automatic executor or write wrapper'
 fi
 
