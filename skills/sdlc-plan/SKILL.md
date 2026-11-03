@@ -25,12 +25,18 @@ Resolve the task from the argument or the branch name (`PROJ-1234-...` → `PROJ
 
 ## Design contents
 
-Exactly four sections: problem and acceptance criteria; flow with **one** Mermaid diagram; files and TDD tasks; out of scope. Every file and symbol named must exist in `project-doc/_project/codemap.md` (grep it) or be marked `(new)`. Cite business rules by id (`R-03`), do not restate them.
+A `Type: bug | feature` header from `sdlc-intake`, then exactly five sections: problem and acceptance criteria; solution options and trade-offs (at least two options, the choice and why); flow with **one** Mermaid diagram; files and TDD tasks; out of scope. A bug keeps it short: reproduction as the current behavior, one regression AC, the fix option, no diagram unless the path is unclear. Every file and symbol named must exist in `project-doc/_project/codemap.md` (grep it) or be marked `(new)`. Cite business rules by id (`R-03`), do not restate them.
+
+Every acceptance criterion `AC-n` names its acceptance test (file and test name). Task 0 writes all AC tests and shows them failing; the design is not ready if any AC lacks a test. Name the agents for each phase from [../../sdlc/agents.yml](../../sdlc/agents.yml).
 
 Choose evidence that matches the changed surface: HTTP client evidence for APIs and visible front-end evidence for UI/E2E. AWS follows the [safety rules](../../sdlc/SDLC.md#safety-rules).
 
 ## Goldfish check
 
-Before presenting or posting the design, run [../../sdlc/goldfish.md](../../sdlc/goldfish.md): a context-free subagent reads `design.md`, `INDEX.md`, and `codemap.md`, explains the plan back, and lists symbols that do not exist. Fix the design; do not save the Goldfish output.
+Before presenting or posting the design, run the Goldfish panel in [../../sdlc/goldfish.md](../../sdlc/goldfish.md): parallel context-free reviewers, one lens each (bug: comprehension, testability; feature: all five), read only `design.md`, `INDEX.md`, and `codemap.md`. Any Fail blocks; turn each Partial into a design edit; do not save the Goldfish output.
+
+## AIDOS card
+
+When a hand-off card is asked for, run [aidos-card.sh](aidos-card.sh) `<design.md>`: it prints the four AIDOS blocks (Problem → Solution → Tech Design → Testing, https://github.com/shobman/aidos) built only from the design's sections, so the card never drifts from it.
 
 For an authorized GitHub issue, prepare a concise sanitized plan comment that mirrors the design's criteria, tasks, and validation. The skill does not create branches, commits, pull requests, or AWS requests.
