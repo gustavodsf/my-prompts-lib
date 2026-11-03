@@ -14,12 +14,12 @@ Monitor issues and pull requests without writing by default. Multiple candidate 
 
 For an authorized issue:
 
-1. Read the issue requirements and create/update local context and `plan.md`.
+1. Read the issue requirements and create/update local context and `design.md`.
 2. Create or update a sanitized issue-plan comment with objective, tasks, criteria, and validation.
 3. Create the branch using the issue number and execute the approved work.
 4. Add concise sanitized comments for material progress, blockers, validation, review, and pull request creation.
 5. Run validation and the opposite-agent review before opening or updating the linked pull request.
 
-Persist the authorization and issue number so a monitor restart cannot advance another issue. Keep generated task Markdown under `project-doc/<issue-number>/` and out of commits.
+Persist the authorization and issue number so a monitor restart cannot advance another issue. Keep generated task Markdown under `project-doc/<issue-number>/` and out of commits; at the end, apply the end-of-task rule in `SDLC.md`.
 
-The read-only scheduled monitor (`monitor.sh`) never invokes Claude, `curl`, AWS, GitHub writes, `git push`, or a write wrapper. Run API evidence in a visible terminal and make GitHub writes only during the separately approved interactive workflow. Never create, update, delete, or mutate AWS resources.
+The read-only scheduled monitor (`monitor.sh`) never invokes Claude, `curl`, AWS, GitHub writes, `git push`, or a write wrapper. Run API evidence in a visible terminal and make GitHub writes only during the separately approved interactive workflow. AWS and secrets follow the [safety rules](../../sdlc/SDLC.md#safety-rules).

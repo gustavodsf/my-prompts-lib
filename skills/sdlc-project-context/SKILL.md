@@ -1,21 +1,41 @@
 ---
 name: sdlc-project-context
-description: Create or refresh local architecture, back-end, and front-end context before planning work in a new project. Use when beginning work in an unfamiliar repository or when its stored context is stale.
+description: Create or refresh the durable project context (INDEX, one-page architecture, business rules, decisions) and regenerate the code map before planning work. Use when beginning work in an unfamiliar repository or when its stored context is stale.
 argument-hint: "[task or issue identifier]"
 ---
 
-# Project context
+# Project context (the Elephant)
 
 Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](../../sdlc/error.md).
 
-Read repository instructions and inspect the project before planning. Store local context outside the repository under `project-doc/<task-or-issue-id>/`.
+Context is **per project, not per task**. Store it outside the repository in `project-doc/_project/`. Use [../../sdlc/templates/project-context.md](../../sdlc/templates/project-context.md) for structure and size limits.
 
-Use [../../sdlc/templates/project-context.md](../../sdlc/templates/project-context.md) for their structure. Create or refresh these documents:
+## First run (no `_project/INDEX.md`)
 
-- `architecture.md`: system purpose, modules, entry points, integrations, data and authorization boundaries, deployment, repository instructions, verification commands, risks.
-- `back-end.md`: APIs, jobs, events, stores, service boundaries, observability, test patterns, important dependencies, read/write and performance constraints.
-- `front-end.md`: applications, routes, data flow, API clients, design system components/tokens/typography/colors/spacing/accessibility, responsive behavior, and visual-validation approach.
+Read repository instructions and inspect the project, then create:
 
-Use concise, factual descriptions grounded in the repository. If no front-end or design system exists, record that fact and its planning impact. Do not invent a design system.
+- `INDEX.md` — max 30 lines, the single entry point.
+- `architecture.md` — max 80 lines; one page covering what used to be architecture, back-end, and front-end context.
+- `business-rules.md` — numbered rules, one line each.
+- `decisions.md` — short ADRs, max 5 lines each.
+- `codemap.md` — generated, see below.
 
-Do not access AWS, change repository files, or create external records. Present the context for approval before detailed planning.
+## Later runs (INDEX exists)
+
+Do not rewrite. Regenerate `codemap.md`, compare the commit recorded in `INDEX.md` with `HEAD` (`git diff --stat <commit>..HEAD`), and edit only the lines the change affects. Update the `Updated:` line. If a file would exceed its limit, cut; do not add a new file.
+
+## Code map
+
+Regenerate, never hand-write:
+
+```bash
+node <this-skill-dir>/codemap.mjs <repo-root> > project-doc/_project/codemap.md
+```
+
+[codemap.mjs](codemap.mjs) sits beside this file and needs the TypeScript 5.x compiler API from the project (`npm i -D typescript@5` if absent; TypeScript 7 has no JS API). For non-TypeScript projects use `npx repomix --compress --style markdown -o project-doc/_project/codemap.md`. Grep `codemap.md` on demand (`rg 'OrderService' codemap.md`) instead of reading it whole.
+
+Hand-written files never list method or function names; point to directories and let `codemap.md` hold symbols.
+
+## Rules
+
+Ground every line in the repository. If no front end or design system exists, record that and its planning impact; do not invent one. Do not change repository files or create external records. Follow the [safety rules](../../sdlc/SDLC.md#safety-rules). Present the diff of the context for approval before detailed planning.
