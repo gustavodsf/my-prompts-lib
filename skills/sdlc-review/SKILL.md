@@ -78,4 +78,5 @@ These files are part of the standard, not optional detail. They travel with this
 1. [phases.md](phases.md) — Phase 1 find candidates, Phase 2 verify (calibration, convention quotes, framework mitigations, premise caps), Phase 3 sweep, Phase 4 classify and what is not a finding. Read in full before Phase 1.
 2. [output.md](output.md) — reading cheaply, and the exact output sections (spec compliance, issues by severity, test review, not covered). Read before writing.
 3. [security-checklist.md](security-checklist.md) — used in Phase 1.
-4. [lineage.md](lineage.md) — who calls this file and where its rules came from. Improve review quality by improving these files.
+4. [anti-patterns.md](anti-patterns.md) — structural anti-patterns (duplication, god class, …), used in Phase 1 step 11.
+5. [lineage.md](lineage.md) — who calls this file and where its rules came from. Improve review quality by improving these files.

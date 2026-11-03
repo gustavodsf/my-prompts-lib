@@ -11,7 +11,7 @@ Prepare one shared brief: feature objective, acceptance criteria, recorded base 
 1. Correctness, regressions, error handling, and test coverage.
 2. Performance: N+1 queries, unbounded reads, pagination, inefficient joins, missing indexes for new hot queries, repeated network or disk work, avoidable serialization, cache behavior, and resource cleanup. Require query or benchmark evidence for performance claims.
 3. Security: apply `security-checklist.md`; check tenant scoping, secret/cookie/token/PII exposure in code or logs, sensitive error responses, and least-privilege AWS access. AWS writes in automated flows are a policy violation.
-4. Duplication and project patterns: duplicated rules, validation, mappings, contracts, queries, UI components, or helpers; an existing pattern the change should reuse; a new convention that conflicts with project practice.
+4. Duplication and project patterns: duplicated rules, validation, mappings, contracts, queries, UI components, or helpers; an existing pattern the change should reuse; a new convention that conflicts with project practice; and the structural anti-patterns in [anti-patterns.md](anti-patterns.md) (god class, long method, feature envy, shotgun surgery, swallowed errors, dead or speculative code), cited by `AP-XXX`.
 
 When relevant, each area also checks reliability (idempotency, retries, timeouts, partial failure, rollback), data and compatibility (migrations, contracts, defaults, upgrade/rollback), observability (sanitized logs, actionable errors), accessibility and UI (keyboard, focus, contrast, responsive layout, design system), and integrations and cost (rate limits, duplicate calls, payload size).
 
