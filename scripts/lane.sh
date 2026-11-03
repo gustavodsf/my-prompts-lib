@@ -6,7 +6,7 @@ runner_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 config_file="$runner_dir/project.conf"
 prompt_keys=(repo owner checkout worktrees docs state evidence_branch)
 required_keys=("${prompt_keys[@]}" claude_bin gh_bin git_bin)
-optional_keys=(codex_bin timeout_seconds max_turns)
+optional_keys=(codex_bin grok_bin gemini_bin timeout_seconds max_turns)
 seen_keys=" "
 
 usage() {
@@ -140,8 +140,9 @@ github_fingerprint() {
 }
 
 run_claude() {
+  [[ "$lane" != 'ci' ]] || export APOLO_SDLC_IMPLEMENTER=claude
   [[ -z "$bot_token" ]] || export GH_TOKEN="$bot_token"
-  cd "$conf_checkout" && APOLO_SDLC_LANE="$lane" exec "$conf_claude_bin" -p --dangerously-skip-permissions \
+  cd "$conf_checkout" && APOLO_SDLC_LANE="$lane" APOLO_SDLC_AGENTS="$agents" exec "$conf_claude_bin" -p --dangerously-skip-permissions \
     --settings "$deny_file" --max-turns "$conf_max_turns" < "$prompt_copy"
 }
 
@@ -154,6 +155,8 @@ build_prompt() {
     value="conf_$key"
     printf '%s: %s\n' "$key" "${!value}"
   done
+  printf 'agents: %s\n' "$(tr '\n' ' ' <<< "$agents" | sed 's/ $//')"
+  printf 'agent_runner: %s\n' "$runner_dir/agent-run.sh"
   printf '\n'
   cat "$prompt_file"
 }
@@ -162,7 +165,18 @@ read_config
 require_tool claude
 require_tool gh
 require_tool git
-[[ "$lane" != 'issue' ]] || require_tool codex
+for agent in grok gemini; do
+  value="conf_${agent}_bin"
+  [[ -z "${!value:-}" ]] || require_tool "$agent"
+done
+# The agents table is validated before any agent runs; the ci lane's fixer is this claude session.
+agents_table="$runner_dir/lanes/agents.yml"
+[[ -f "$agents_table" && -x "$runner_dir/resolve-agents.sh" && -x "$runner_dir/agent-run.sh" ]] \
+  || fail "agents table or agent runner is missing beside lane.sh (reinstall the lanes)"
+implementer_args=()
+[[ "$lane" != 'ci' ]] || implementer_args=(--implementer claude)
+agents="$("$runner_dir/resolve-agents.sh" "$agents_table" "$runner_dir/project.conf" "${implementer_args[@]}" 2>&1)" \
+  || fail "invalid agents table: $agents"
 load_bot_token
 
 prompt_file="$runner_dir/lanes/$lane.md"

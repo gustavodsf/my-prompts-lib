@@ -430,6 +430,9 @@ chmod +x "$source_root/scripts/lane.sh"
 printf 'issue prompt v1\n' > "$source_root/lanes/issue.md"
 printf 'ci prompt v1\n' > "$source_root/lanes/ci.md"
 printf '{"permissions":{"deny":["Bash(sudo *)"]}}\n' > "$source_root/lanes/deny.json"
+mkdir -p "$source_root/sdlc"
+cp "$repo_root/sdlc/agents.yml" "$source_root/sdlc/agents.yml"
+cp "$repo_root/scripts/agent-run.sh" "$repo_root/scripts/resolve-agents.sh" "$source_root/scripts/"
 
 lane_checkout="$test_root/lane-project/app"
 mkdir -p "$lane_checkout/.git"
@@ -643,6 +646,11 @@ for directory in worktrees docs; do
 done
 [[ "$(cat "$lane_runner_dir/project.conf")" == "$expected_conf" ]] || fail "unexpected lane configuration: $(cat "$lane_runner_dir/project.conf")"
 assert_private "$lane_runner_dir/project.conf" 'lane configuration'
+for file in agent-run.sh resolve-agents.sh; do
+  [[ -x "$lane_runner_dir/$file" ]] || fail "installer did not install the lane $file"
+  grep -qF "Edit(/$lane_runner_dir/$file)" "$lane_runner_dir/lanes/deny.json" || fail "lane deny rules do not protect $file"
+done
+cmp -s "$repo_root/sdlc/agents.yml" "$lane_runner_dir/lanes/agents.yml" || fail 'installer did not install the agents table'
 if find "$lane_claude_dir" "$lane_codex_dir" \( -name 'lane.sh' -o -name 'deny.json' -o -name 'project.conf' -o -lname "*/lanes*" -o -lname '*lane.sh' \) -print | grep -q .; then
   fail 'lane files leaked into the assistant configuration directories'
 fi
@@ -765,5 +773,9 @@ fi
 grep -qF 'cron' "$test_root/lane.err" || fail "installer did not explain the non-ASCII checkout: $(cat "$test_root/lane.err")"
 [[ "$(grep -vF -e "$ci_marker" -e "$monitor_marker" "$cron_file" | sort)" == "$(printf '%s\n' "$cron_before_missing_tool" | grep -vF "$monitor_marker" | sort)" ]] \
   || fail 'rejected lane installs changed unrelated crontab entries'
+
+GROK_BIN="$node_install/codex" run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" > /dev/null \
+  || fail 'installer rejected a detected grok binary'
+grep -qF "grok_bin=$node_install/codex" "$lane_runner_dir/project.conf" || fail 'installer did not record the detected grok binary'
 
 printf 'PASS: installer behavior\n'
