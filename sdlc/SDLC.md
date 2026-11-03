@@ -24,7 +24,7 @@ Keep two layers, and nothing else:
 
 `codemap.md` is generated from the code (`codemap.mjs` in `sdlc-project-context`, or `npx repomix --compress` for non-TypeScript projects) and never hand-written. Grep it on demand. Hand-written documents never list method or function names.
 
-Before implementation, the design passes the [Goldfish check](goldfish.md): a context-free subagent must explain it back and confirm its symbols exist.
+Before implementation, the design passes the [Goldfish check](goldfish.md): a parallel panel of context-free reviewers (one lens each: comprehension, adversarial, security, testability, simplicity; bugs run comprehension and testability) grades it Pass/Partial/Fail; any Fail blocks.
 
 Keep all task and context Markdown out of commits. Versioned configuration under `sdlc/` and `README.md` may be committed.
 
@@ -66,7 +66,7 @@ Use `error.md` during planning, QA, and review. A repeated failure becomes an er
 
 ## Agents per phase
 
-[agents.yml](agents.yml) assigns an agent to each phase: `design` (Elephant, default claude), `goldfish` (default grok), `implement` (default codex), `review`, and `tiebreak` (a third agent). Allowed agents: claude, codex, grok, gemini.
+[agents.yml](agents.yml) assigns an agent to each phase: `design` (Elephant, default claude), `goldfish` (default grok; the panel alternates `goldfish_agents`, default grok then a fresh claude), `implement` (default codex), `review`, and `tiebreak` (a third agent). Allowed agents: claude, codex, grok, gemini.
 
 - **An agent never reviews its own output.** `goldfish` ≠ `design`; `review` ≠ `implement`; `tiebreak` differs from both `implement` and `review`.
 - **Available** = non-empty command in `agents.yml` and a known binary (`<agent>_bin` in the lane's `project.conf`, otherwise `PATH`). CLIs are never guessed: no command, no agent.

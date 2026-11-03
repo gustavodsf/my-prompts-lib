@@ -465,4 +465,28 @@ grep -qF -- '--ask-for-approval never exec --sandbox workspace-write' "$call_log
 grep -qF 'env lane=issue token=none push=no-push://' "$call_log" || fail "codex runs with a token or a push URL: $(cat "$call_log")"
 grep -qF '| implement | codex |' "$test_root/metrics.md" || fail 'agent-run.sh does not append metrics'
 
+# Goldfish panel: parallel lenses, alternating agents, aggregated verdict, no files kept.
+panel="$(new_runner panel)"
+write_valid_conf "$panel"
+printf '%s\n' '#!/usr/bin/env bash' 'grep -q "Lens: security" "$2" && echo "Verdict: Fail" || echo "Verdict: Partial"' > "$test_root/grok-fake"
+printf '%s\n' '#!/usr/bin/env bash' 'echo "Verdict: Pass"' > "$test_root/claude-panel"
+chmod +x "$test_root/grok-fake" "$test_root/claude-panel"
+sed -i "s|^claude_bin=.*|claude_bin=$test_root/claude-panel|" "$panel/project.conf"
+printf 'grok_bin=%s\n' "$test_root/grok-fake" >> "$panel/project.conf"
+mkdir -p "$test_root/tmp"
+if TMPDIR="$test_root/tmp" "$panel/agent-run.sh" goldfish-panel "$test_root/task.md" "$checkout" "$test_root/panel.md" feature > "$test_root/panel.out"; then
+  fail 'goldfish panel passed despite a failing lens'
+fi
+grep -qF 'PANEL: FAIL' "$test_root/panel.out" || fail "goldfish panel did not block on Fail: $(cat "$test_root/panel.out")"
+for lens in comprehension adversarial security testability simplicity; do
+  grep -qE "^### $lens \((grok|claude)\)" "$test_root/panel.out" || fail "goldfish panel skipped the $lens lens"
+done
+grep -qF '### comprehension (grok): Partial' "$test_root/panel.out" && grep -qF '### adversarial (claude): Pass' "$test_root/panel.out" \
+  || fail 'goldfish panel does not alternate grok and claude'
+"$panel/agent-run.sh" goldfish-panel "$test_root/task.md" "$checkout" '' bug > "$test_root/panel.out" || fail 'bug panel failed'
+[[ "$(grep -c '^### ' "$test_root/panel.out")" == 2 ]] && grep -qF 'PANEL: PARTIAL' "$test_root/panel.out" \
+  || fail "bug panel must run comprehension and testability only: $(cat "$test_root/panel.out")"
+grep -qF '| goldfish:security | grok |' "$test_root/panel.md" || fail 'goldfish panel does not record metrics per lens'
+[[ -z "$(ls -A "$test_root/tmp")" ]] || fail 'goldfish panel left files behind'
+
 printf 'PASS: lane behavior\n'

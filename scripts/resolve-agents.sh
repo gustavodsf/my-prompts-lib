@@ -63,4 +63,10 @@ goldfish="$(phase_of goldfish)"; available "$goldfish" || goldfish="$design"
 review="$(pick "$(phase_of review)" blocked "$impl")"
 tiebreak="$(pick "$(phase_of tiebreak)" human "$impl" "$review")"
 
-printf 'design=%s\ngoldfish=%s\nimplement=%s\nreview=%s\ntiebreak=%s\n' "$design" "$goldfish" "$impl" "$review" "$tiebreak"
+pool=""
+for a in $(sed -nE 's/^goldfish_agents: *//p' "$table"); do
+  [[ " ${known[*]} " == *" $a "* ]] || die "goldfish_agents uses unknown agent '$a'"
+  available "$a" && pool="${pool:+$pool,}$a"
+done
+[[ -n "$pool" ]] || pool="$design"
+printf 'design=%s\ngoldfish=%s\nimplement=%s\nreview=%s\ntiebreak=%s\ngoldfish_pool=%s\n' "$design" "$goldfish" "$impl" "$review" "$tiebreak" "$pool"

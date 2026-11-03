@@ -33,7 +33,7 @@ Choose evidence that matches the changed surface: HTTP client evidence for APIs 
 
 ## Goldfish check
 
-Before presenting or posting the design, run [../../sdlc/goldfish.md](../../sdlc/goldfish.md): a context-free subagent reads `design.md`, `INDEX.md`, and `codemap.md`, explains the plan back, and lists symbols that do not exist. Fix every Fail in its Pass/Partial/Fail grades; do not save the Goldfish output.
+Before presenting or posting the design, run the Goldfish panel in [../../sdlc/goldfish.md](../../sdlc/goldfish.md): parallel context-free reviewers, one lens each (bug: comprehension, testability; feature: all five), read only `design.md`, `INDEX.md`, and `codemap.md`. Any Fail blocks; turn each Partial into a design edit; do not save the Goldfish output.
 
 ## AIDOS card
 
