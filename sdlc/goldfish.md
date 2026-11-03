@@ -12,7 +12,7 @@ One Goldfish misses what a differently focused one sees, so the check is a **pan
 | adversarial | edge cases, failure modes, how it breaks |
 | security | secrets, permissions, AWS, personal data, privacy |
 | testability | every AC has a concrete automated test; every task a file |
-| simplicity | over-scope; a simpler option for the same ACs |
+| simplicity | over-scope; a simpler option for the same ACs; planned duplication, a god class, or speculative abstraction ([anti-patterns](../skills/sdlc-review/anti-patterns.md)) |
 
 - **Set:** `goldfish_lenses` in [agents.yml](agents.yml) (default: bug → comprehension, testability; feature → all five).
 - **Diversity:** lenses alternate over `goldfish_agents` (default grok, then a fresh claude); unavailable agents drop out, and with none left a fresh `design`-agent process runs every lens ([fallback rule](SDLC.md#agents-per-phase)).

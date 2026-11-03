@@ -48,6 +48,11 @@ dominant cause of misses, and it is worse than a candidate that gets refuted.
    Stay light — flag what the diff puts in front of you. **An exploitation path, or it is not
    a finding.**
 10. **Database & migrations** — backward-compatible and compliant with `rule-migrations.md`.
+11. **Anti-patterns** — check what the diff introduces or worsens against
+   [anti-patterns.md](anti-patterns.md): duplicated logic (grep new rules, literals and
+   conditions repo-wide), god class/module, long methods, swallowed errors, shared mutable
+   state, dead or speculative code. **A named future change that breaks, or it is not a
+   finding** — size alone is not.
     On high-volume tables, unbatched DML, non-`CONCURRENTLY` index builds, or table-rewriting
     `ALTER`s are **Critical**. Also: no N+1, transactions for multi-write, indexes for new
     query patterns. **Never edit an applied migration** — the checksum changes and
