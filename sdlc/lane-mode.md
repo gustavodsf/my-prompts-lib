@@ -1,6 +1,6 @@
 # Lane mode
 
-Lane mode is how the sdlc skills run inside an autonomous lane started by the monitor's lane runner (`lane.sh`). Outside lane mode, ignore this file completely.
+Lane mode is how the sdlc skills run inside an autonomous lane started by the monitor's lane runner (`lane.sh`, or `lane.ps1` on Windows). Outside lane mode, ignore this file completely.
 
 ## Activation
 

@@ -18,7 +18,7 @@ To install on macOS or Linux, explicitly authorize backup and replacement of exi
 ./scripts/install.sh --local --replace
 ```
 
-On Windows, run the equivalent command in Command Prompt:
+On Windows, run the equivalent command in Command Prompt or PowerShell (see [Windows](#windows) for everything else):
 
 ```bat
 scripts\install.bat --local --dry-run --replace
@@ -27,7 +27,7 @@ scripts\install.bat --local --replace
 
 The installer links `sdlc` and each skill individually (`~/.claude/skills/<name>`, `~/.codex/skills/<name>`), so skills it does not own — synced or personal ones — stay untouched. It does not manage `CLAUDE.md`, `AGENTS.md`, or command files; keep your own global instructions. With `--replace`, a regular pre-existing `sdlc` is renamed in place as `sdlc-old-<timestamp>`, and a pre-existing skill is moved to `skills-backup/<name>-old-<timestamp>` beside `skills/`, so the backup is not loaded as a duplicate skill. Re-running the installer is always safe: it first uninstalls the previous install — links in `sdlc` and `skills/` that point into any clone of this library (or dangle after that clone moved), including skills that no longer exist — and then links again, with no `--replace` needed for them. `--replace` is only for real files or directories at a managed target. Symbolic links that point elsewhere are yours and are refused. `--uninstall` removes only the managed links (`./scripts/install.sh --uninstall`, `scripts\install.bat --uninstall`); with `--track URL` it also removes that project's runner directory and its marked cron entries, keeping the clone and other projects' entries. `--dry-run` previews both. A `skills` directory that is itself a symbolic link from an older install is refused; remove that link and rerun.
 
-Windows symbolic links require Developer Mode or an elevated Command Prompt. Do not delete the managed clone while its links are active.
+On Windows, directories are linked with a symbolic link when allowed (Developer Mode or an elevated prompt), otherwise with a junction, which needs no privilege. Do not delete the managed clone while its links are active.
 
 ## Authorized GitHub monitor
 
@@ -55,7 +55,7 @@ Only one issue may be authorized at a time. Clear it before authorizing another 
 ./scripts/monitor.sh --clear-authorization
 ```
 
-The authorization state is local: `~/.local/state/apolo-sdlc/` on macOS/Linux and `%LOCALAPPDATA%\apolo-sdlc\authorized-issue` on Windows. It is bound to the repository and remote. A closed issue is marked completed; an open authorized issue remains ready for interactive execution.
+The authorization state is local: `~/.local/state/apolo-sdlc/` on macOS/Linux and `%LOCALAPPDATA%\apolo-sdlc\state\<hash>.state` on Windows (the older `monitor.bat` used `%LOCALAPPDATA%\apolo-sdlc\authorized-issue`; authorize the issue again after upgrading). It is bound to the repository and remote. A closed issue is marked completed; an open authorized issue remains ready for interactive execution.
 
 Use an explicit interactive session for code changes, HTTP evidence, GitHub comments, pushes, and pull requests. The read-only monitor has no Claude executor, wrapper, AWS access, `curl`, or GitHub-write path.
 
@@ -70,7 +70,7 @@ On macOS or Linux, `--track` combines local assistant configuration with a singl
 
 `--track` copies `scripts/monitor.sh` to a private runner at `~/.local/share/apolo-sdlc/runners/<owner>/<repository>/monitor.sh` (mode `0700`), so later changes to this configuration clone never reach the schedule; re-run the same `--track` command to update the runner after reviewing the new monitor. The cron entry invokes only that runner with `--scheduled --repo <cloned-project>`, discards standard output, and overwrites `last-error.log` next to the runner on each run, so only the latest scheduled error is kept and the log cannot grow without bound. `--track` refuses to schedule when the runner, the tracked clone, or any of their parent directories can be modified by another user; shared sticky directories such as `/tmp` are accepted. Re-running the same command reuses the links and clone, and replaces only its own marked cron entry; unrelated entries are preserved. The clone is shallow (`--depth 1`) to minimize initial network and disk use; deepen it manually if interactive work needs history. Without `--lanes`, it does not run Claude, use `curl` or AWS, push, comment on issues, or create pull requests.
 
-`--track` is not yet available in `install.bat`; use `--local` on Windows and create a Task Scheduler action for `scripts\monitor.bat --repo C:\absolute\path\to\project` every 15 minutes. The scheduled user needs an authenticated `gh` CLI; Claude is not invoked by the schedule.
+On Windows, `scripts\install.bat --track URL` does the same with Task Scheduler instead of cron (see [Windows](#windows)). The scheduled user needs an authenticated `gh` CLI; Claude is not invoked by the monitor.
 
 ## Autonomous lanes
 
@@ -97,6 +97,26 @@ What gets installed in the private runner directory (`~/.local/share/apolo-sdlc/
 The skills learn the unattended behavior from [sdlc/lane-mode.md](sdlc/lane-mode.md), which applies only when `lane.sh` set `APOLO_SDLC_LANE` and the prompt is a lane prompt. Guided ClickUp/Jira work and the interactive `vamos trabalhar` flow never use it, and nothing under `lanes/` is linked into `~/.claude` or `~/.codex`.
 
 To disable the lanes, re-run the same `--track` command without `--lanes`: their cron entries are removed and the read-only monitor stays.
+
+## Windows
+
+Everything runs natively on Windows (no WSL): `scripts\install.ps1`, `monitor.ps1`, `lane.ps1`, `agent-run.ps1` and `resolve-agents.ps1` are PowerShell ports of the `.sh` scripts, with the same options, rules and guardrails, and work on Windows PowerShell 5.1 and PowerShell 7. `install.bat` and `monitor.bat` only forward their arguments (to `pwsh` when installed, else `powershell`). The `.sh` scripts stay the macOS/Linux version; both are tested on every push (`ci/windows.yml`, to be moved to `.github/workflows/`).
+
+```bat
+scripts\install.bat --local
+scripts\install.bat --track https://github.com/OWNER/REPO
+scripts\install.bat --track https://github.com/OWNER/REPO --lanes issue,ci --checkout "C:\Users\me\src\my project"
+scripts\install.bat --track https://github.com/OWNER/REPO --uninstall
+```
+
+- **Scheduling.** Task Scheduler tasks in the `\apolo-sdlc\` folder replace cron: `apolo-sdlc-track-OWNER-REPO` every 15 minutes, `apolo-sdlc-lane-issue-OWNER-REPO` at :00/:15/:30/:45 and `apolo-sdlc-lane-ci-OWNER-REPO` at :07/:22/:37/:52. Each task's description is its marker (`apolo-sdlc-track:OWNER/REPO`, `apolo-sdlc-lane:issue:OWNER/REPO`), so a re-run replaces exactly that project's tasks and `--uninstall` removes only them. Tasks run as you, only while you are logged on (no stored password); a PowerShell window may flash briefly. If registering fails, the previous tasks and runner files are restored.
+- **Data.** Clones, runners and logs live in `%LOCALAPPDATA%\apolo-sdlc\` (`projects\`, `runners\OWNER\REPO\`, `runners\OWNER\REPO\logs\`; errors of the last run in `logs\<lane>-last-error.log`). `APOLO_SDLC_DATA` and `APOLO_SDLC_TASK_FOLDER` override them.
+- **Tools.** `claude`, `codex`, `grok`, `gh` and `git` are resolved to absolute paths at install time (`.exe` or the npm `.cmd` shim) and written to `project.conf`, together with a `path=` line, because scheduled tasks do not get your interactive PATH. Re-run the installer after moving a tool. Claude Code on Windows needs Git for Windows (Git Bash).
+- **Links.** Symbolic links first, then junctions for directories (no Developer Mode needed); `APOLO_SDLC_NO_SYMLINK=1` forces junctions. Uninstall deletes only the link, never the target.
+- **Guardrails.** Identical to the shell version: agents started by `agent-run.ps1` get no `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`, no credential prompts and an unusable push URL; only the lane's own Claude session gets the bot token and pushes. `state\bot-token` must be readable only by you, SYSTEM and Administrators (checked from its ACL). The POSIX owner/permission checks of the runner directories are not ported; keep `%LOCALAPPDATA%` private (the default).
+- **Code map.** In Windows PowerShell 5.1, `>` writes UTF-16; use `node codemap.mjs <repo> --out project-doc\_project\codemap.md`.
+- **Line endings.** `.gitattributes` keeps `*.sh` LF and `*.ps1`/`*.bat`/`*.cmd` CRLF in every checkout.
+- **Tests.** `pwsh -File tests\windows\run.ps1` (add `-Real` to also register and remove real tasks in `\apolo-sdlc-ci\`); the suites mock the Task Scheduler cmdlets and use fake `claude`/`codex`/`grok`/`gh` binaries.
 
 ## Workflow guarantees
 

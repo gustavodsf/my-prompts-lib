@@ -1,0 +1,48 @@
+# Move to .github/workflows/windows.yml (pushing workflow files needs a token with the `workflow` scope).
+name: windows
+
+on:
+  push:
+    branches: [main, windows-native]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: windows (${{ matrix.shell }}, ${{ matrix.links }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+        links: [symlink, junction]
+    steps:
+      - uses: actions/checkout@v4
+      - name: PowerShell version
+        shell: ${{ matrix.shell }}
+        run: $PSVersionTable.PSVersion.ToString()
+      - name: Windows test suites (Task Scheduler mocked; real tasks in \apolo-sdlc-ci\)
+        shell: ${{ matrix.shell }}
+        env:
+          APOLO_SDLC_NO_SYMLINK: ${{ matrix.links == 'junction' && '1' || '' }}
+        run: |
+          & .\tests\windows\run.ps1 -Real
+          exit $LASTEXITCODE
+
+  posix:
+    name: posix (.sh tests + pwsh on Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: sudo apt-get update -q && sudo apt-get install -y -q ripgrep
+      - name: Shell tests
+        run: |
+          for t in tests/*.sh evals/run.sh; do echo "== $t"; bash "$t"; done
+      - name: PowerShell suites on Linux
+        shell: pwsh
+        run: |
+          & ./tests/windows/run.ps1
+          exit $LASTEXITCODE

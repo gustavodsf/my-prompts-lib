@@ -7,7 +7,7 @@ Each run handles at most ONE item (one pull request or one failed workflow run),
 
 ## Execution environment
 
-- This run is unattended: `lane.sh` started it from cron with `claude -p`, permission prompts off and the lane deny rules on. It already holds the lane lock; do not create another one.
+- This run is unattended: `lane.sh` (`lane.ps1` on Windows) started it from cron (Task Scheduler on Windows) with `claude -p`, permission prompts off and the lane deny rules on. It already holds the lane lock; do not create another one.
 - Configuration values come only from the block above: `repo`, `owner`, `checkout`, `worktrees`, `docs`, `state`. Prefer absolute paths built from them.
 - Use `gh` with `-R <repo>`. Post every comment with `--body-file <absolute path>`.
 - If a bot token is configured, `GH_TOKEN` is already set in your environment by the runner, so `gh` acts as the bot account; check with `gh api user --jq .login`. Never read, print, copy or pass the token yourself, and never open `<state>/bot-token`.

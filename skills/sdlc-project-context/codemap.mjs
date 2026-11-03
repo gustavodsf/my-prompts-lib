@@ -7,8 +7,13 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const root = path.resolve(process.argv[2] || '.');
-const dirs = process.argv.slice(3);
+// --out FILE writes UTF-8 directly (Windows PowerShell 5.1 `>` would write UTF-16).
+const argv = process.argv.slice(2);
+let outFile = null;
+const outAt = argv.indexOf('--out');
+if (outAt >= 0) { outFile = argv[outAt + 1]; argv.splice(outAt, 2); if (!outFile) { console.error('--out needs a file'); process.exit(1); } }
+const root = path.resolve(argv[0] || '.');
+const dirs = argv.slice(1);
 let ts;
 try { ts = createRequire(path.join(root, 'package.json'))('typescript'); }
 catch { ts = null; }
@@ -72,4 +77,5 @@ for (const f of files) {
   if (mod !== module) { out.push(``, `## ${mod}`); module = mod; }
   out.push(``, `### ${f}`, ...lines);
 }
-process.stdout.write(out.join('\n') + '\n');
+if (outFile) fs.writeFileSync(outFile, out.join('\n') + '\n', 'utf8');
+else process.stdout.write(out.join('\n') + '\n');
