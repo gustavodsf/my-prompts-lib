@@ -7,6 +7,7 @@ claude_dir="${HOME}/.claude"
 codex_dir="${HOME}/.codex"
 replace=0
 dry_run=0
+uninstall=0
 local_mode=0
 track_url=""
 track_root="${XDG_DATA_HOME:-${HOME}/.local/share}/apolo-sdlc/projects"
@@ -36,7 +37,10 @@ new_dirs=()
 
 usage() {
   cat <<'EOF'
-Usage: scripts/install.sh [--local | --track GITHUB_URL] [options]
+Usage: scripts/install.sh [--local | --track GITHUB_URL] [--uninstall] [options]
+
+Re-running is safe: links from a previous install (any clone of this library) are
+removed and recreated, so no --replace is needed for them.
 
 Options:
   --local             Link the shared sdlc rules and each skill into Claude and Codex.
@@ -54,7 +58,10 @@ Options:
   --owner LOGIN       GitHub login whose issues and comments the lanes obey
                       (default: the login reported by gh).
   --gh-bin PATH       GitHub CLI executable used to resolve the owner.
-  --replace          Back up existing managed targets before linking.
+  --replace           Back up existing real files or directories at managed targets
+                      (managed links never need it).
+  --uninstall         Remove the managed sdlc and skill links; with --track URL also
+                      that project's runner and its marked cron entries (the clone stays).
   --dry-run           Print planned actions without changing files.
   --help              Show this help.
 EOF
@@ -273,6 +280,7 @@ write_lane_config() {
   [[ -z "$lane_codex_bin" ]] || printf 'codex_bin=%s\n' "$lane_codex_bin"
   [[ -z "$lane_grok_bin" ]] || printf 'grok_bin=%s\n' "$lane_grok_bin"
   [[ -z "$lane_gemini_bin" ]] || printf 'gemini_bin=%s\n' "$lane_gemini_bin"
+  [[ -z "${CHECKPOINT_LINES:-}" ]] || printf 'checkpoint_lines=%s\n' "$CHECKPOINT_LINES"
 }
 
 # The versioned rules cannot name this runner, so the lane is denied edits to its own runner files here.
@@ -624,6 +632,7 @@ validate_lane_options() {
     owner="$("$gh_bin" api user --jq .login 2>/dev/null)" || fail 'could not resolve the GitHub owner with gh; pass --owner'
   fi
   [[ "$owner" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]] || fail "unsafe GitHub owner: $owner"
+  [[ -z "${CHECKPOINT_LINES:-}" || "$CHECKPOINT_LINES" =~ ^[1-9][0-9]*$ ]] || fail "CHECKPOINT_LINES must be a positive integer: $CHECKPOINT_LINES"
   build_lane_tools
 }
 
@@ -698,6 +707,10 @@ while [[ $# -gt 0 ]]; do
       dry_run=1
       shift
       ;;
+    --uninstall)
+      uninstall=1
+      shift
+      ;;
     --help)
       usage
       exit 0
@@ -728,6 +741,73 @@ for directory in "$claude_dir" "$codex_dir"; do
   [[ "$directory" != "/" ]] || fail 'unsafe configuration directory'
 done
 
+# A managed link points at `<clone>/sdlc` or `<clone>/skills/<same name>` of a library clone
+# (a directory with sdlc/ and skills/), or dangles there after the clone moved. Nothing else is touched.
+is_managed_link() {
+  local target="$1" dest root
+  [[ -L "$target" ]] || return 1
+  dest="$(readlink "$target")"
+  if [[ "$(basename "$target")" == sdlc && "$(basename "$(dirname "$target")")" != skills ]]; then
+    [[ "$dest" == /*/sdlc ]] || return 1
+    root="${dest%/sdlc}"
+  else
+    [[ "$dest" == /*/skills/"$(basename "$target")" ]] || return 1
+    root="${dest%/skills/*}"
+  fi
+  [[ ( -d "$root/sdlc" && -d "$root/skills" ) || ! -e "$dest" ]]
+}
+
+declare -a removed_links=()
+declare -a removed_dests=()
+remove_managed_link() {
+  local target="$1" dest
+  dest="$(readlink "$target")"
+  if [[ "$dry_run" -eq 1 ]]; then
+    printf 'Would remove managed link %s\n' "$target"
+    return 0
+  fi
+  rm -- "$target" || return 1
+  removed_links+=("$target")
+  removed_dests+=("$dest")
+  printf 'Removed managed link %s\n' "$target"
+}
+
+managed_links_in() {
+  local directory="$1" link
+  is_managed_link "$directory/sdlc" && printf '%s\n' "$directory/sdlc"
+  for link in "$directory"/skills/*; do
+    is_managed_link "$link" && printf '%s\n' "$link"
+  done
+  return 0
+}
+
+if [[ "$uninstall" -eq 1 ]]; then
+  while IFS= read -r link; do
+    remove_managed_link "$link" || fail "could not remove managed link: $link"
+  done < <(managed_links_in "$claude_dir"; managed_links_in "$codex_dir")
+  if [[ -n "$track_url" ]]; then
+    project_runner="$runner_root/${track_owner}/${track_repository}"
+    if [[ "$dry_run" -eq 1 ]]; then
+      printf 'Would remove runner %s and its cron entries\n' "$project_runner"
+    else
+      if [[ -d "$project_runner" && ! -L "$project_runner" ]]; then
+        rm -rf -- "$project_runner" || fail "could not remove runner: $project_runner"
+        printf 'Removed runner %s\n' "$project_runner"
+      fi
+      cron_markers="# apolo-sdlc-track:${track_owner}/${track_repository}"
+      for lane in issue ci; do
+        cron_markers+=$'\n'"# apolo-sdlc-lane:${lane}:${track_owner}/${track_repository}"
+      done
+      cron_work="$(mktemp -d "${TMPDIR:-/tmp}/apolo-sdlc-cron.XXXXXX")" || fail 'could not create temporary cron directory'
+      write_crontab "$cron_work" "$cron_markers" || { rm -rf -- "$cron_work"; fail "${track_error:-could not update crontab}"; }
+      rm -rf -- "$cron_work"
+      printf 'Removed cron entries for %s/%s (clone kept)\n' "$track_owner" "$track_repository"
+    fi
+  fi
+  printf 'Uninstall complete\n'
+  exit 0
+fi
+
 [[ -d "$source_dir/sdlc" ]] || fail "managed source does not exist: $source_dir/sdlc"
 declare -a skill_names=()
 for skill_path in "$source_dir"/skills/*/; do
@@ -757,10 +837,8 @@ for index in "${!targets[@]}"; do
   target="${targets[$index]}"
   source_path="${target_sources[$index]}"
   if [[ -L "$target" ]]; then
-    if [[ -n "$track_url" && "$(readlink "$target")" == "$source_path" ]]; then
-      continue
-    fi
-    fail "refusing to replace existing symbolic link: $target"
+    is_managed_link "$target" || fail "refusing to replace unmanaged symbolic link: $target"
+    continue
   fi
   [[ ! -e "$target" || "$replace" -eq 1 ]] || fail "managed target exists; rerun with --replace: $target"
 done
@@ -796,6 +874,15 @@ rollback_installation() {
   done
 
   remove_directories ${created_directories[@]+"${created_directories[@]}"} || rollback_failed=1
+
+  for ((index = ${#removed_links[@]} - 1; index >= 0; index--)); do
+    target="${removed_links[$index]}"
+    if [[ ! -e "$target" && ! -L "$target" ]]; then
+      ln -s "${removed_dests[$index]}" "$target" || rollback_failed=1
+    else
+      rollback_failed=1
+    fi
+  done
 
   [[ "$rollback_failed" -eq 0 ]]
 }
@@ -863,12 +950,23 @@ for directory in "$claude_dir/skills" "$codex_dir/skills"; do
   fi
 done
 
+# Uninstall the previous install first: stale managed skill links (renamed or removed skills) go too.
+for directory in "$claude_dir" "$codex_dir"; do
+  while IFS= read -r link; do
+    [[ "$(readlink "$link")" == "$source_dir/${link#"$directory"/}" ]] && continue
+    if ! remove_managed_link "$link"; then
+      rollback_installation || true
+      fail "could not remove previous managed link: $link"
+    fi
+  done < <(managed_links_in "$directory")
+done
+
 for index in "${!targets[@]}"; do
   target="${targets[$index]}"
   source_path="${target_sources[$index]}"
 
-  if [[ -L "$target" && -n "$track_url" && "$(readlink "$target")" == "$source_path" ]]; then
-    printf 'Reusing shared link %s\n' "$target"
+  if [[ -L "$target" && "$(readlink "$target")" == "$source_path" ]]; then
+    printf 'Reusing link %s\n' "$target"
     continue
   fi
 

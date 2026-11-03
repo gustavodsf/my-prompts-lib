@@ -107,14 +107,14 @@ grep -F 'skills directory is a symbolic link' "$test_root/legacy.out" >/dev/null
 
 linked_claude_dir="$test_root/linked-claude"
 linked_codex_dir="$test_root/linked-codex"
-mkdir -p "$linked_claude_dir/skills" "$linked_codex_dir"
-ln -s "$source_root/skills/example" "$linked_claude_dir/skills/example"
+mkdir -p "$linked_claude_dir/skills" "$linked_codex_dir" "$test_root/user-owned/example"
+ln -s "$test_root/user-owned/example" "$linked_claude_dir/skills/example"
 
 if "$installer" --source "$source_root" --claude-dir "$linked_claude_dir" --codex-dir "$linked_codex_dir" --replace; then
-  fail 'expected installer to reject an existing symbolic link'
+  fail 'expected installer to reject an unmanaged symbolic link'
 fi
 
-assert_link "$linked_claude_dir/skills/example" "$source_root/skills/example"
+assert_link "$linked_claude_dir/skills/example" "$test_root/user-owned/example"
 
 dry_claude_dir="$test_root/dry-claude"
 dry_codex_dir="$test_root/dry-codex"
@@ -777,5 +777,54 @@ grep -qF 'cron' "$test_root/lane.err" || fail "installer did not explain the non
 GROK_BIN="$node_install/codex" run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" > /dev/null \
   || fail 'installer rejected a detected grok binary'
 grep -qF "grok_bin=$node_install/codex" "$lane_runner_dir/project.conf" || fail 'installer did not record the detected grok binary'
+
+# Re-running is uninstall + install: twice in a row works without --replace,
+# links from another clone and stale skills are replaced, user files stay.
+re_claude="$test_root/re-claude"
+re_codex="$test_root/re-codex"
+old_clone="$test_root/old-clone"
+mkdir -p "$re_claude/skills/mine" "$re_codex/skills" "$old_clone/sdlc" "$old_clone/skills/example" "$old_clone/skills/retired"
+printf 'user skill\n' > "$re_claude/skills/mine/SKILL.md"
+ln -s "$old_clone/sdlc" "$re_claude/sdlc"
+ln -s "$old_clone/skills/example" "$re_codex/skills/example"
+ln -s "$old_clone/skills/retired" "$re_claude/skills/retired"
+ln -s "$test_root/gone-clone/skills/vanished" "$re_codex/skills/vanished"
+"$installer" --local --source "$source_root" --claude-dir "$re_claude" --codex-dir "$re_codex" >/dev/null || fail 'first re-run failed'
+"$installer" --local --source "$source_root" --claude-dir "$re_claude" --codex-dir "$re_codex" >/dev/null || fail 'second re-run failed'
+assert_link "$re_claude/sdlc" "$source_root/sdlc"
+assert_link "$re_codex/skills/example" "$source_root/skills/example"
+[[ ! -e "$re_claude/skills/retired" && ! -L "$re_claude/skills/retired" ]] || fail 'stale managed skill link was kept'
+[[ ! -L "$re_codex/skills/vanished" ]] || fail 'dangling managed skill link was kept'
+grep -qx 'user skill' "$re_claude/skills/mine/SKILL.md" || fail 'unmanaged user skill was not preserved'
+[[ -d "$old_clone/skills/retired" ]] || fail 'reinstall touched the old clone'
+
+"$installer" --uninstall --source "$source_root" --claude-dir "$re_claude" --codex-dir "$re_codex" --dry-run | grep 'Would remove managed link' >/dev/null || fail 'uninstall dry run did not report'
+assert_link "$re_claude/sdlc" "$source_root/sdlc"
+"$installer" --uninstall --source "$source_root" --claude-dir "$re_claude" --codex-dir "$re_codex" >/dev/null || fail 'uninstall failed'
+[[ -z "$(find "$re_claude" "$re_codex" -type l)" ]] || fail 'uninstall left managed links'
+grep -qx 'user skill' "$re_claude/skills/mine/SKILL.md" || fail 'uninstall removed an unmanaged file'
+
+# Track re-run keeps exactly one monitor + two lane entries; --uninstall --track removes them and the runner.
+CHECKPOINT_LINES=180 run_lanes https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" > /dev/null || fail 'installer failed with CHECKPOINT_LINES'
+grep -qx 'checkpoint_lines=180' "$lane_runner_dir/project.conf" || fail 'CHECKPOINT_LINES was not written to project.conf'
+if CHECKPOINT_LINES=abc run_lanes https://github.com/lanes/demo --lanes issue --checkout "$lane_checkout" 2> "$test_root/lane.err"; then
+  fail 'installer accepted a non-numeric CHECKPOINT_LINES'
+fi
+grep -F 'CHECKPOINT_LINES must be a positive integer' "$test_root/lane.err" >/dev/null || fail 'bad CHECKPOINT_LINES was not explained'
+for attempt in 1 2; do
+  TRACK_GH_LOG="$gh_log" CLAUDE_BIN="$lane_tools/claude" CODEX_BIN="$shell_bin/codex" NODE_BIN="$shell_bin/node" \
+    run_track https://github.com/lanes/demo --lanes issue,ci --checkout "$lane_checkout" --claude-dir "$test_root/track-re-claude" \
+    --codex-dir "$test_root/track-re-codex" --track-root "$test_root/track-re-root" --gh-bin "$track_bin/gh" > /dev/null \
+    || fail "track re-run $attempt failed"
+done
+[[ "$(count_marker "$monitor_marker")" == 1 && "$(count_marker "$issue_marker")" == 1 && "$(count_marker "$ci_marker")" == 1 ]] \
+  || fail 'track re-run did not keep exactly three entries'
+run_track https://github.com/lanes/demo --uninstall --claude-dir "$test_root/track-re-claude" --codex-dir "$test_root/track-re-codex" \
+  --track-root "$test_root/track-re-root" > /dev/null || fail 'track uninstall failed'
+[[ "$(count_marker "$monitor_marker")" == 0 && "$(count_marker "$issue_marker")" == 0 && "$(count_marker "$ci_marker")" == 0 ]] \
+  || fail 'track uninstall kept cron entries'
+[[ "$(count_marker '# apolo-sdlc-lane:issue:other/proj')" == 1 ]] || fail 'track uninstall removed another project lane'
+[[ ! -e "$lane_runner_dir" ]] || fail 'track uninstall kept the runner'
+[[ -z "$(find "$test_root/track-re-claude" "$test_root/track-re-codex" -type l)" ]] || fail 'track uninstall kept links'
 
 printf 'PASS: installer behavior\n'
