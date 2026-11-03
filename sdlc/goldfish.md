@@ -8,7 +8,7 @@ After `design.md` is drafted and before it is presented for approval (guided mod
 
 ## How
 
-1. Spawn a **fresh subagent** with no conversation history (Claude Code: `Agent`/Task; Codex: `spawn_agent`). A review in the same context is not a Goldfish check: if no subagent tool exists, say so and record the limitation.
+1. Use the `goldfish` agent from [agents.yml](agents.yml) (never the `design` agent). Spawn a **fresh subagent** with no conversation history (Claude Code: `Agent`/Task; Codex: `spawn_agent`). A review in the same context is not a Goldfish check: if no subagent tool exists, say so and record the limitation.
 2. Give it only these paths and the prompt below — no summary, no chat history:
    - `project-doc/_project/INDEX.md`
    - `project-doc/_project/codemap.md`

@@ -55,11 +55,36 @@ Every skill links here; this is the single source for these rules.
 
 Write a failing test when meaningful. When it is not meaningful, obtain approval for a proportionate alternative verification.
 
+**Acceptance tests first.** Every acceptance criterion in `design.md` (`AC-n`) becomes an automated test that is written and seen failing before any production code. Implementation is done only when all AC tests pass; a skipped or deleted AC test means not done.
+
 Code comments must be minimal. Add one only for a non-obvious invariant, constraint, compatibility need, security tradeoff, or performance reason.
 
-Work implemented with Claude is reviewed in Codex; work implemented with Codex is reviewed in Claude. If the opposite agent is unavailable, do not report the review as complete. Use the `sdlc-review` skill; after corrections, run it in delta mode so follow-up reviews verify only the correction diff. Open pull requests and handle reviewer comments with `sdlc-pr`.
+Review follows [Agents per phase](#agents-per-phase): the reviewer is never the implementer. If the required reviewer is unavailable, do not report the review as complete. Use the `sdlc-review` skill; after corrections, run it in delta mode so follow-up reviews verify only the correction diff. Open pull requests and handle reviewer comments with `sdlc-pr`.
 
 Use `error.md` during planning, QA, and review. A repeated failure becomes an error-catalog rule with a prevention check.
+
+## Agents per phase
+
+[agents.yml](agents.yml) assigns an agent to each phase: `design` (Elephant, default claude), `goldfish` (default grok), `implement` (default codex), `review`, and `tiebreak` (a third agent). Allowed agents: claude, codex, grok, gemini.
+
+- **An agent never reviews its own output.** `goldfish` ≠ `design`; `review` ≠ `implement`; `tiebreak` differs from both `implement` and `review`.
+- An agent with an empty command in `agents.yml` is unavailable: record the limitation and use the next agent that satisfies the rule; never fall back to self-review.
+- The tie-break runs only when the reviewer and implementer disagree on a finding after one round; its verdict decides.
+
+## Metrics
+
+Each task keeps `project-doc/<task-id>/metrics.md`, one row appended per agent run:
+
+| Phase | Agent | Tokens (if known) | Attempt | Result |
+| --- | --- | --- | --- | --- |
+| implement | codex | 41k | 2 | AC tests pass |
+| review | claude | — | 1 | fail: 2 findings |
+
+Result is pass/fail plus a few words. Before archiving the task, add one line to `INDEX.md` only if a pattern is worth keeping (for example, a phase that keeps needing retries).
+
+## Prompt evals
+
+When a skill, template, or `SDLC.md` changes, run [../evals/](../evals/README.md) before committing.
 
 ## Installation behavior
 

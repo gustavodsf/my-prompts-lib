@@ -9,8 +9,10 @@ Rules: R-xx, R-yy (from `_project/business-rules.md`)
 
 - Current behavior:
 - Desired behavior:
-- AC-1:
+- AC-1: <criterion> — acceptance test: `<test file>#<test name>`
 - AC-2:
+
+Each AC becomes a failing acceptance test before any code; done = all AC tests pass.
 - Edge cases:
 
 ## 2. Flow
@@ -28,6 +30,7 @@ sequenceDiagram
 
 | # | AC | File (`codemap.md` path or `(new)`) | Failing test first | Verification | Status |
 | --- | --- | --- | --- | --- | --- |
+| 0 | all | test files | AC acceptance tests, all red | test run shows each AC failing | pending |
 | 1 | AC-1 | | | | pending |
 
 Evidence: API → curl/client with synthetic data; UI → visible flow, screenshots, console/network. AWS: not allowed | read-only, see `sdlc/SDLC.md#safety-rules`.

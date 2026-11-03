@@ -27,7 +27,7 @@ require_text "$shared_rules" '- **Guided mode:** the user supplies a ClickUp or 
 require_text "$shared_rules" 'Start only after the user says `vamos trabalhar <issue-number>`.'
 require_text "$shared_rules" 'Write a failing test when meaningful.'
 
-lane_skills=(sdlc-plan sdlc-qa sdlc-evidence sdlc-review sdlc-pr sdlc-github-issue)
+lane_skills=(sdlc-plan sdlc-implement sdlc-qa sdlc-evidence sdlc-review sdlc-pr sdlc-github-issue)
 for skill in "${lane_skills[@]}"; do
   skill_file="$repo_root/skills/$skill/SKILL.md"
   references="$(grep -F 'lane-mode.md' "$skill_file" || true)"

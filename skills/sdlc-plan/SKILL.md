@@ -27,6 +27,8 @@ Resolve the task from the argument or the branch name (`PROJ-1234-...` → `PROJ
 
 Exactly four sections: problem and acceptance criteria; flow with **one** Mermaid diagram; files and TDD tasks; out of scope. Every file and symbol named must exist in `project-doc/_project/codemap.md` (grep it) or be marked `(new)`. Cite business rules by id (`R-03`), do not restate them.
 
+Every acceptance criterion `AC-n` names its acceptance test (file and test name). Task 0 writes all AC tests and shows them failing; the design is not ready if any AC lacks a test. Name the agents for each phase from [../../sdlc/agents.yml](../../sdlc/agents.yml).
+
 Choose evidence that matches the changed surface: HTTP client evidence for APIs and visible front-end evidence for UI/E2E. AWS follows the [safety rules](../../sdlc/SDLC.md#safety-rules).
 
 ## Goldfish check

@@ -116,7 +116,7 @@ Inspired by Google's [Elephant-Goldfish Model](https://github.com/google/elephan
 | Task | `project-doc/<task>/design.md`, `evidence.md` | one task, then archived or deleted | 150 lines |
 | Goldfish | fresh subagent | one check, nothing saved | — |
 
-See [sdlc/SDLC.md](sdlc/SDLC.md) and [sdlc/goldfish.md](sdlc/goldfish.md).
+See [sdlc/SDLC.md](sdlc/SDLC.md) and [sdlc/goldfish.md](sdlc/goldfish.md). Agents per phase: [sdlc/agents.yml](sdlc/agents.yml). Prompt evals: [evals/](evals/README.md). Agent instructions for this repo: [AGENTS.md](AGENTS.md).
 
 ## Skills
 
@@ -124,6 +124,7 @@ See [sdlc/SDLC.md](sdlc/SDLC.md) and [sdlc/goldfish.md](sdlc/goldfish.md).
 | --- | --- |
 | [sdlc-project-context](skills/sdlc-project-context/SKILL.md) | Build the durable per-project context in `project-doc/_project/` (INDEX, one-page architecture, business rules, decisions) and the generated `codemap.md` |
 | [sdlc-plan](skills/sdlc-plan/SKILL.md) | Resolve the ticket or authorized issue, write a ≤150-line `design.md`, and run the Goldfish check |
+| [sdlc-implement](skills/sdlc-implement/SKILL.md) | Acceptance tests from `design.md` first (red), then code until all pass |
 | [sdlc-qa](skills/sdlc-qa/SKILL.md) | Plan and run proportionate QA through visible terminal or browser paths |
 | [sdlc-evidence](skills/sdlc-evidence/SKILL.md) | Capture and index sanitized API or UI/E2E evidence |
 | [sdlc-review](skills/sdlc-review/SKILL.md) | The review standard (find → verify → sweep → classify, with a security checklist) plus the [feature review](skills/sdlc-review/feature-review.md): cross-agent, four areas, and bounded delta reviews after corrections |

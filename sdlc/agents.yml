@@ -1,0 +1,18 @@
+# Agent per SDLC phase. Edit here only; skills and lanes read this file.
+# Rule: an agent never reviews its own output (see sdlc/SDLC.md#agents-per-phase).
+phases:
+  design: claude          # Elephant: drafts design.md
+  goldfish: grok          # context-free check of design.md; must differ from design
+  implement: codex        # acceptance tests first, then code
+  review: claude          # PR/feature review; must differ from implement
+  tiebreak: gemini        # third agent when review and implementer disagree
+
+# How to start each agent non-interactively. claude and codex are the CLIs the
+# lanes already use (scripts/lane.sh: claude_bin, codex_bin). grok and gemini have
+# no integration in this repo yet: set the command you actually have installed.
+# {prompt_file} is replaced with the path of the prompt to run.
+agents:
+  claude: 'claude -p < {prompt_file}'
+  codex: 'codex exec - < {prompt_file}'
+  grok: ''                # e.g. your Grok CLI; empty = unavailable
+  gemini: ''              # e.g. 'gemini -p "$(cat {prompt_file})"'; empty = unavailable
