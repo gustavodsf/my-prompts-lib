@@ -64,6 +64,13 @@ Review follows [Agents per phase](#agents-per-phase): the reviewer is never the 
 
 Use `error.md` during planning, QA, and review. A repeated failure becomes an error-catalog rule with a prevention check.
 
+## Implementation modes
+
+Chosen at intake and recorded as `Mode:` in `design.md`, so the owner keeps his own mental model when he wants it. In both, the AC tests are written first and seen failing.
+
+- **guided** (imperative): the implementer writes no production logic. It inserts `SDLC-PSEUDO` comment blocks at the exact places to change, with real calls and signatures from `codemap.md`, order, inputs and outputs, posts the `file:line` list and stops. The owner implements and says `pronto`; then tests, checks and review run. No `SDLC-PSEUDO` marker may remain before the PR (`agent-run.sh pseudo-check`).
+- **auto**: the agent implements in checkpoints of about `checkpoint_lines` changed lines (default 250; `agents.yml`, overridden by `project.conf`), always at a task boundary. Each checkpoint is committed and summarized (diff, tasks done, tasks next) and waits for `segue` or feedback, which is applied first. Every checkpoint is a row in `metrics.md`.
+
 ## Agents per phase
 
 [agents.yml](agents.yml) assigns an agent to each phase: `design` (Elephant, default claude), `goldfish` (default grok; the panel alternates `goldfish_agents`, default grok then a fresh claude), `implement` (default codex), `review`, and `tiebreak` (a third agent). Allowed agents: claude, codex, grok, gemini.

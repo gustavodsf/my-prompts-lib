@@ -15,6 +15,7 @@ Only in lane mode (see [../../sdlc/lane-mode.md](../../sdlc/lane-mode.md) for wh
 3. **Ask at most 5 questions per round**, numbered, each closed or with a proposed default ("Assume X unless you say otherwise"). Ask a new round only when an answer opens a new gap.
    - **Bug path (short):** steps to reproduce, expected vs actual, environment or data needed, since when / last good version. Skip any you could reproduce yourself.
    - **Feature path (full):** user and goal, acceptance criteria and edge cases, rules affected (`R-xx`), out of scope, constraints (permissions, performance, data migration).
-4. **No questions needed** → say so in one line and go to `sdlc-plan`. Record answers in `design.md` (criteria, rules, out of scope), never in a separate file.
+4. **Implementation mode, always asked** (it does not count toward the 5): "`guided` — I place pseudocode and failing tests where you change the code, you implement — or `auto` — I implement and stop for your review about every 250 changed lines?" Record it as `Mode:` in `design.md`; no answer by the plan gate means `auto`.
+5. **No other questions needed** → say so in one line and go to `sdlc-plan`. Record answers in `design.md` (criteria, rules, out of scope), never in a separate file.
 
 In a lane, post the round as an `intake` comment (see `lanes/issue.md`); interactively, ask the user. Follow the [safety rules](../../sdlc/SDLC.md#safety-rules).

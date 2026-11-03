@@ -395,7 +395,7 @@ assert_lane_prompt() {
 
 assert_lane_prompt issue sdlc-intake sdlc-project-context sdlc-plan sdlc-review sdlc-qa sdlc-evidence sdlc-pr
 assert_lane_prompt ci sdlc-pr sdlc-review
-for gate in 'aprovado' 'aprovado: 1, 3' 'evidence_branch'; do
+for gate in 'aprovado' 'aprovado: 1, 3' 'evidence_branch' 'pronto' 'segue' 'scaffold_posted' 'checkpoint_posted' 'pseudo-check'; do
   grep -qF "$gate" "$lanes_dir/issue.md" || fail "issue lane prompt does not cover: $gate"
 done
 
@@ -488,5 +488,27 @@ grep -qF '### comprehension (grok): Partial' "$test_root/panel.out" && grep -qF 
   || fail "bug panel must run comprehension and testability only: $(cat "$test_root/panel.out")"
 grep -qF '| goldfish:security | grok |' "$test_root/panel.md" || fail 'goldfish panel does not record metrics per lens'
 [[ -z "$(ls -A "$test_root/tmp")" ]] || fail 'goldfish panel left files behind'
+
+# Implementation modes: checkpoint threshold and pseudocode cleanup.
+badcp="$(new_runner badcp)"
+write_valid_conf "$badcp"
+printf 'checkpoint_lines=lots\n' >> "$badcp/project.conf"
+expect_rejection 'a non-numeric checkpoint_lines' 'checkpoint_lines' "$badcp" issue
+modes="$(new_runner modes)"
+write_valid_conf "$modes"
+repo="$test_root/modes-repo"
+mkdir -p "$repo" && /usr/bin/git -C "$repo" init -q && /usr/bin/git -C "$repo" -c user.name=t -c user.email=t@t commit -q --allow-empty -m base
+base="$(/usr/bin/git -C "$repo" rev-parse HEAD)"
+seq 1 120 > "$repo/a.ts"; printf 'notes\n' > "$repo/notes.md"
+/usr/bin/git -C "$repo" add a.ts notes.md
+[[ "$(PATH=/usr/bin:/bin "$modes/agent-run.sh" diff-lines "$repo" "$base")" == '120 250' ]] || fail 'diff-lines does not count code lines against the default 250'
+printf 'checkpoint_lines=100\n' >> "$modes/project.conf"
+[[ "$(PATH=/usr/bin:/bin "$modes/agent-run.sh" diff-lines "$repo" "$base")" == '120 100' ]] || fail 'project.conf checkpoint_lines does not override agents.yml'
+PATH=/usr/bin:/bin "$modes/agent-run.sh" pseudo-check "$repo" > /dev/null || fail 'pseudo-check failed on clean code'
+printf '// SDLC-PSEUDO: call OrderService#getById(id)\n' > "$repo/b.ts"
+if PATH=/usr/bin:/bin "$modes/agent-run.sh" pseudo-check "$repo" > "$test_root/pc.out" 2>&1; then
+  fail 'pseudo-check passed with a leftover marker'
+fi
+grep -qF 'b.ts:1' "$test_root/pc.out" || fail "pseudo-check does not point at the marker: $(cat "$test_root/pc.out")"
 
 printf 'PASS: lane behavior\n'

@@ -6,7 +6,7 @@ runner_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 config_file="$runner_dir/project.conf"
 prompt_keys=(repo owner checkout worktrees docs state evidence_branch)
 required_keys=("${prompt_keys[@]}" claude_bin gh_bin git_bin)
-optional_keys=(codex_bin grok_bin gemini_bin timeout_seconds max_turns)
+optional_keys=(codex_bin grok_bin gemini_bin timeout_seconds max_turns checkpoint_lines)
 seen_keys=" "
 
 usage() {
@@ -54,6 +54,8 @@ read_config() {
   conf_max_turns="${conf_max_turns:-150}"
   [[ "$conf_timeout_seconds" =~ ^[1-9][0-9]*$ ]] || fail "timeout_seconds must be a positive integer: $conf_timeout_seconds"
   [[ "$conf_max_turns" =~ ^[1-9][0-9]*$ ]] || fail "max_turns must be a positive integer: $conf_max_turns"
+  [[ -z "${conf_checkpoint_lines:-}" || "$conf_checkpoint_lines" =~ ^[1-9][0-9]*$ ]] \
+    || fail "checkpoint_lines must be a positive integer: $conf_checkpoint_lines"
 }
 
 require_tool() {

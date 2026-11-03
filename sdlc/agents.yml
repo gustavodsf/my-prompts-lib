@@ -7,6 +7,10 @@ phases:
   review: claude          # PR/feature review; never the implementer
   tiebreak: grok          # third agent when review and implementer disagree
 
+# Auto implementation mode: stop for owner review after about this many changed lines
+# (added+removed, Markdown excluded). project.conf `checkpoint_lines=` overrides it.
+checkpoint_lines: 250
+
 # Goldfish panel: parallel context-free reviewers, one lens each (sdlc/goldfish.md).
 # Agents alternate over this list per lens; unavailable ones drop out (fallback: fresh design agent).
 goldfish_agents: grok claude

@@ -4,9 +4,26 @@
 #        agent-run.sh goldfish-panel <prompt-file> <cwd> [metrics.md] [bug|feature]
 # The panel runs one context-free reviewer per lens in parallel, alternating goldfish_agents,
 # prints each lens report and a final `PANEL: PASS|PARTIAL|FAIL` line, and keeps no files.
+#        agent-run.sh diff-lines <cwd> <since-ref>   -> "<added+removed> <checkpoint threshold>"
+#        agent-run.sh pseudo-check <cwd>             -> lists leftover SDLC-PSEUDO markers, exit 1 if any
 # Lives in the lane runner directory beside project.conf and lanes/agents.yml.
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+case "${1:-}" in
+  diff-lines)
+    cwd="${2:?cwd}"; since="${3:?since-ref}"
+    limit="$(sed -nE 's/^checkpoint_lines=([0-9]+)$/\1/p' "$here/project.conf" 2>/dev/null | head -1)"
+    [[ -n "$limit" ]] || limit="$(sed -nE 's/^checkpoint_lines: *([0-9]+).*/\1/p' "$here/lanes/agents.yml" | head -1)"
+    # Committed since the ref plus uncommitted work, Markdown excluded (never committed).
+    n="$(git -C "$cwd" diff --numstat "$since" -- . ':(exclude)*.md' | awk '$1 != "-" {s += $1 + $2} END {print s + 0}')"
+    printf '%s %s\n' "$n" "${limit:-250}"; exit 0 ;;
+  pseudo-check)
+    cwd="${2:?cwd}"
+    if git -C "$cwd" grep -n -I --untracked 'SDLC-PSEUDO' -- . ':(exclude)*.md'; then
+      echo 'pseudocode markers remain: implement or remove them before the PR' >&2; exit 1
+    fi
+    exit 0 ;;
+esac
 phase="${1:?phase}"; prompt_file="${2:?prompt file}"; cwd="${3:?cwd}"; metrics="${4:-}"
 conf="$here/project.conf"; table="$here/lanes/agents.yml"
 [[ -f "$prompt_file" && -d "$cwd" ]] || { echo "agent-run: prompt file or cwd missing" >&2; exit 2; }

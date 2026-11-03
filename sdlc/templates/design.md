@@ -1,7 +1,8 @@
 # <TASK ID> — Design (max 150 lines)
 
 Type: bug | feature (from `sdlc-intake`)
-Mode: guided ClickUp/Jira | authorized GitHub issue
+Mode: guided | auto (implementation mode, chosen at intake; see `sdlc/SDLC.md#implementation-modes`)
+Flow: ClickUp/Jira | authorized GitHub issue
 Source: <task or issue URL>
 Context read: `_project/INDEX.md`, `_project/architecture.md`, `_project/codemap.md` (generated at <commit>)
 Rules: R-xx, R-yy (from `_project/business-rules.md`)
