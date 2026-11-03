@@ -15,19 +15,41 @@ After GitHub authorization, use the issue number in the branch, local documents,
 
 An autonomous lane started by the monitor's lane runner runs in lane mode, defined in [lane-mode.md](lane-mode.md). It is active only when the lane runner set `APOLO_SDLC_LANE` and the prompt is a lane prompt. Guided mode and the interactive GitHub mode above never use it; in those sessions ignore `lane-mode.md`.
 
-## Project context
+## Project context (Elephant) and task context
 
-On the first interaction with a project, inspect its instructions and create local `architecture.md`, `back-end.md`, and `front-end.md` before detailed planning. The front-end context must identify the existing design system. Reuse its components, tokens, typography, spacing, colors, and accessibility patterns. Record a missing design system as a risk; do not invent one silently.
+Keep two layers, and nothing else:
 
-## Planning and evidence
+- **Durable, per project** — `project-doc/_project/`: `INDEX.md` (≤30 lines, the only entry point), `architecture.md` (≤80 lines, one page including front end and design system), `business-rules.md` (one line per numbered rule), `decisions.md` (ADRs ≤5 lines), and the generated `codemap.md`. Created once by `sdlc-project-context`, then updated only where the code changed. Reuse the existing design system; record a missing one as a risk, do not invent one.
+- **Ephemeral, per task** — `project-doc/<task-or-issue-id>/`: `design.md` (≤150 lines, from `sdlc-plan`) and `evidence.md`. QA and review notes stay in the conversation or in `evidence.md`; do not add files.
 
-Use one `plan.md` per task or issue. Keep task-generated plan, QA, evidence, review, and context Markdown out of commits. Versioned configuration under `sdlc/` and `README.md` may be committed.
+`codemap.md` is generated from the code (`codemap.mjs` in `sdlc-project-context`, or `npx repomix --compress` for non-TypeScript projects) and never hand-written. Grep it on demand. Hand-written documents never list method or function names.
+
+Before implementation, the design passes the [Goldfish check](goldfish.md): a context-free subagent must explain it back and confirm its symbols exist.
+
+Keep all task and context Markdown out of commits. Versioned configuration under `sdlc/` and `README.md` may be committed.
+
+## End of task
+
+When the pull request is open (or the task is abandoned):
+
+1. **Promote** only what is durable: new or changed rules to `business-rules.md`, decisions to `decisions.md`, structural changes to `architecture.md`; regenerate `codemap.md`; update `INDEX.md`.
+2. **Archive or delete** `project-doc/<task-or-issue-id>/` (move to `project-doc/_archive/` if you want history). Nothing in the task folder is read again.
+
+**By-the-way work** found during a task never gets its own document: add one line under `By-the-way backlog` in `INDEX.md` (`BTW-NN: <what> (<where>)`) or open an issue when authorized.
+
+## Evidence
 
 - API work uses `curl` or an equivalent HTTP client with synthetic data. Record the command, status, and sanitized response.
 - UI/E2E work uses the visible front end as the primary evidence. Capture relevant screenshots and console/network results.
-- Keep an `evidence.md` index. Remove secrets, cookies, authorization headers, personal data, and internal-only values before displaying or posting evidence.
+- Keep an `evidence.md` index.
 
-In GitHub mode, an authorized automated issue flow may perform AWS read-only inspection when needed. It must never create, update, or delete AWS resources. Never publish AWS credentials, account identifiers, internal endpoints, or unredacted results.
+## Safety rules
+
+Every skill links here; this is the single source for these rules.
+
+- **Secrets and data.** Remove secrets, cookies, authorization headers, personal data, account identifiers, internal endpoints, and internal-only values before displaying, posting, or committing anything. Use synthetic data.
+- **AWS.** Prohibited in guided mode. In GitHub mode, an authorized issue flow may perform read-only inspection when needed. Never create, update, or delete AWS resources. Never publish AWS credentials, account identifiers, internal endpoints, or unredacted results.
+- **Git and GitHub.** Never force-push, rebase, amend, or merge without an explicit request; write to GitHub only within an authorized flow.
 
 ## Quality and review
 

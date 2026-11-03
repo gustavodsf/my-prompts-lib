@@ -28,7 +28,7 @@ Preconditions: all approved tasks are committed, required checks pass, and the `
   - <ClickUp/Jira task URL or GitHub issue #number>
   ```
 
-Run `gh pr create --base <base-branch>` with that title and body, then report the PR URL. Never include secrets, personal data, internal endpoints, or raw AWS data. For an authorized GitHub issue, link the pull request in the issue.
+Run `gh pr create --base <base-branch>` with that title and body, then report the PR URL. Follow the [safety rules](../../sdlc/SDLC.md#safety-rules) for the title and body. For an authorized GitHub issue, link the pull request in the issue. Then apply the end-of-task rule in `SDLC.md`: promote durable rules and decisions, then archive or delete the task folder.
 
 ## Feedback
 

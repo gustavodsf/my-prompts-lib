@@ -10,7 +10,7 @@ Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](
 
 Only in lane mode (see [../../sdlc/lane-mode.md](../../sdlc/lane-mode.md) for when it is active), also apply that file; in every other session ignore it.
 
-Create local QA cases from the approved plan and store them under `project-doc/<task-or-issue-id>/`. Use synthetic data and state which environment is used.
+Derive QA cases from the acceptance criteria in the approved `design.md`. Use synthetic data and state which environment is used.
 
 ## Validation surface
 
@@ -22,4 +22,4 @@ For UI/E2E, run three iterations: the first full execution, a blind second execu
 
 Classify a failure as confirmed only when it recurs in at least two iterations. Record one-off failures as flaky and disagreeing runs as divergent. Summarize the evidence for the task/issue without exposing sensitive data.
 
-AWS is prohibited in guided mode. In authorized GitHub mode, only necessary read-only AWS inspection is allowed. Keep QA Markdown out of commits.
+AWS, secrets, and data follow the [safety rules](../../sdlc/SDLC.md#safety-rules). Record QA cases and results in `evidence.md`; do not create a separate QA file. Keep it out of commits.

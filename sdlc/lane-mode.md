@@ -25,7 +25,7 @@ Only these rules change; every other rule in `SDLC.md`, `error.md` and the skill
 - **Validation surface.** No visible terminal or browser exists. Run HTTP checks and browser flows headless, save their output as evidence, and record "headless lane run" as a limitation. Never claim a visible run.
 - **QA iterations.** Run the second, blind iteration with the opposite agent (Codex) when it is available; otherwise record the limitation.
 - **Evidence.** Post only sanitized summaries. Screenshots are published on the evidence branch named in the configuration block, never merged.
-- **Review.** Review the feature diff against `origin/<default branch>` of the tracked repository, using the issue and `plan.md` as the acceptance criteria instead of a ClickUp ticket. Write the record to the spec folder and post a numbered summary as the lane prompt describes. The opposite-agent rule still holds: if Codex is unavailable, the review is not complete.
+- **Review.** Review the feature diff against `origin/<default branch>` of the tracked repository, using the issue and `design.md` as the acceptance criteria instead of a ClickUp ticket. Write the record to the spec folder and post a numbered summary as the lane prompt describes. The opposite-agent rule still holds: if Codex is unavailable, the review is not complete.
 - **Pull requests.** The `sdlc-pr` preconditions are satisfied by the lane's gates. Use the title format the lane prompt gives.
 
 ## What never changes

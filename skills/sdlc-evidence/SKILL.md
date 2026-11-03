@@ -17,8 +17,6 @@ Use [../../sdlc/templates/evidence.md](../../sdlc/templates/evidence.md) to crea
 - **API work:** run the HTTP command in a user-visible terminal and record its command, status, and sanitized response. Prefer `curl` when it represents the real interface.
 - **UI/E2E work:** run the visible user flow in a browser, then record relevant desktop/mobile captures and console/network result. Do not require duplicate HTTP evidence unless it is needed to diagnose a failure.
 
-Sanitize every artifact before display, sharing, or a GitHub comment. Remove credentials, cookies, authorization headers, personal data, account identifiers, internal endpoints, and sensitive query values. Preserve the original only in the controlled local artifact location when permitted by the project.
-
-AWS is prohibited in guided mode. For an authorized GitHub issue, AWS evidence may document a necessary read-only query and sanitized result; never invoke AWS write operations.
+Sanitize every artifact before display, sharing, or a GitHub comment, per the [safety rules](../../sdlc/SDLC.md#safety-rules), which also govern AWS evidence. Preserve the original only in the controlled local artifact location when permitted by the project.
 
 Keep task-generated evidence Markdown out of commits. In GitHub mode, publish only a concise sanitized summary to the authorized issue.

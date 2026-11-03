@@ -56,6 +56,6 @@ Use these checks in planning, QA, and review. Add an entry when a failure repeat
 
 ### ERR-008 — Design system bypassed
 - Symptom: A UI change introduces inconsistent components, tokens, colors, spacing, or accessibility behavior.
-- How to check: Compare the change with `front-end.md` and nearby UI patterns.
+- How to check: Compare the change with the front-end section of `project-doc/_project/architecture.md` and nearby UI patterns.
 - Prevention: Capture the design system during project context before planning UI work.
 - Seen: 0

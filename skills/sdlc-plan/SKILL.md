@@ -1,16 +1,18 @@
 ---
 name: sdlc-plan
-description: Create or update a local execution plan for a ClickUp/Jira task or an explicitly authorized GitHub issue. Use after project context is available and before implementation.
+description: Create or update a local design document (design.md, max 150 lines) and run a Goldfish check for a ClickUp/Jira task or an explicitly authorized GitHub issue. Use after project context is available and before implementation.
 argument-hint: "[task identifier or issue number]"
 ---
 
-# Execution plan
+# Design
 
 Follow [../../sdlc/SDLC.md](../../sdlc/SDLC.md) and check [../../sdlc/error.md](../../sdlc/error.md).
 
 Only in lane mode (see [../../sdlc/lane-mode.md](../../sdlc/lane-mode.md) for when it is active), also apply that file; in every other session ignore it.
 
-Use [../../sdlc/templates/plan.md](../../sdlc/templates/plan.md) as the local structure. Keep the plan under `project-doc/<task-or-issue-id>/plan.md` and keep it out of commits.
+Use [../../sdlc/templates/design.md](../../sdlc/templates/design.md). Keep one `project-doc/<task-or-issue-id>/design.md` (max 150 lines) out of commits. It replaces the former business-logic, code-sequence, implementation, and plan documents: do not create those.
+
+Read `project-doc/_project/INDEX.md` first; if it is missing or stale, run `sdlc-project-context`.
 
 ## Mode selection
 
@@ -21,10 +23,14 @@ Use [../../sdlc/templates/plan.md](../../sdlc/templates/plan.md) as the local st
 
 Resolve the task from the argument or the branch name (`PROJ-1234-...` → `PROJ-1234`); if neither yields a valid `<PROJECT>-<NUMBER>` or issue number, ask the user. Fetch the summary, status, and acceptance criteria through the ClickUp or Jira integration once, and reuse them for planning, QA, and review. Warn when the ticket is already done or closed. Without an integration, ask the user to paste the criteria; never guess them from the branch or pull request.
 
-## Plan contents
+## Design contents
 
-Record the objective, acceptance criteria, business rules, scope, exclusions, affected context, design-system constraints, allowed files, ordered tasks, evidence type, verification, and risks.
+Exactly four sections: problem and acceptance criteria; flow with **one** Mermaid diagram; files and TDD tasks; out of scope. Every file and symbol named must exist in `project-doc/_project/codemap.md` (grep it) or be marked `(new)`. Cite business rules by id (`R-03`), do not restate them.
 
-Choose evidence that matches the changed surface: HTTP client evidence for APIs and visible front-end evidence for UI/E2E. AWS evidence is allowed only for an authorized GitHub issue and must be read-only.
+Choose evidence that matches the changed surface: HTTP client evidence for APIs and visible front-end evidence for UI/E2E. AWS follows the [safety rules](../../sdlc/SDLC.md#safety-rules).
 
-For an authorized GitHub issue, prepare a concise sanitized plan comment that mirrors the plan's objective, tasks, criteria, and validation. The command/skill does not create branches, commits, pull requests, or AWS requests.
+## Goldfish check
+
+Before presenting or posting the design, run [../../sdlc/goldfish.md](../../sdlc/goldfish.md): a context-free subagent reads `design.md`, `INDEX.md`, and `codemap.md`, explains the plan back, and lists symbols that do not exist. Fix the design; do not save the Goldfish output.
+
+For an authorized GitHub issue, prepare a concise sanitized plan comment that mirrors the design's criteria, tasks, and validation. The skill does not create branches, commits, pull requests, or AWS requests.
