@@ -4,7 +4,7 @@ Use this procedure for the final review of an approved feature and for every fol
 
 ## Reviewers
 
-Work implemented with Claude is reviewed in Codex; work implemented with Codex is reviewed in Claude. If the opposite agent is unavailable, record the limitation and do not report review completion.
+The reviewer is the `review` agent in `sdlc/agents.yml`, and never the agent that implemented the change (see `SDLC.md#agents-per-phase`). If it is unavailable, record the limitation and do not report review completion. Disagreements after one round go to the `tiebreak` agent.
 
 Prepare one shared brief: feature objective, acceptance criteria, recorded base and feature commits, complete diff, relevant full-file context, owned files or flows, and claims made in the task, issue, or pull request that need independent verification. Run four independent reviewers scoped to the feature diff:
 
