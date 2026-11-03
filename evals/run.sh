@@ -38,6 +38,8 @@ tmp="$(mktemp -d)"; : > "$tmp/conf"
 for a in claude codex grok gemini; do printf '#!/bin/sh\n' > "$tmp/$a"; chmod +x "$tmp/$a"; printf '%s_bin=%s\n' "$a" "$tmp/$a" >> "$tmp/conf"; done
 bash "$root/scripts/resolve-agents.sh" "$root/sdlc/agents.yml" "$tmp/conf" > /dev/null || bad 'agents.yml: rejected by scripts/resolve-agents.sh'
 rm -rf "$tmp"
+grep -qE '^checkpoint_lines: *[1-9][0-9]*' "$root/sdlc/agents.yml" || bad 'agents.yml: checkpoint_lines must be a positive integer'
+grep -qF 'Mode: guided | auto' "$root/sdlc/templates/design.md" || bad 'design template: missing Mode: guided | auto'
 for l in $(sed -nE '/^goldfish_lenses:/,/^[a-z]/ s/^  (bug|feature): *//p' "$root/sdlc/agents.yml"); do
   [[ " comprehension adversarial security testability simplicity " == *" $l "* ]] || bad "agents.yml: unknown goldfish lens '$l'"
 done
