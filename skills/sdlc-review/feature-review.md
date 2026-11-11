@@ -17,13 +17,26 @@ When relevant, each area also checks reliability (idempotency, retries, timeouts
 
 Reviewers may read surrounding code only to understand direct interactions, confirm a regression caused by the feature, or identify code it should reuse. Do not report unrelated pre-existing problems.
 
+## Rounds
+
+Each review round lives in `project-doc/<task-or-issue-id>/round-<N>/` (or `<specDir>/round-<N>/` in a lane), one file per reviewer:
+
+- `review-correctness.md`
+- `review-performance.md`
+- `review-security.md`
+- `review-duplication.md`
+
+Each file follows [output.md](output.md) and starts with `VERDICT: PASS | CHANGES | BLOCKED` on line 1. Treat a first line that still uses `Approved`, `Changes Requested`, or `Blocked` as `PASS`, `CHANGES`, or `BLOCKED`. Run all four reviewers in the same round. The round closes only when all four files exist and each has a readable first-line verdict. Never resume the implementer mid-round. If a reviewer finishes without writing its file, or writes a first line that is not a verdict, do not close the round.
+
+After the round closes, write a short consolidation as `review.md` in the task folder (never committed): overall `VERDICT` on line 1 (`BLOCKED` if any reviewer is `BLOCKED`; `CHANGES` if any is `CHANGES` and none is `BLOCKED`; `PASS` only if all four are `PASS`), plus base and reviewed commits, diff scope, checks run, findings with status and disposition, accepted risks, and QA impact.
+
 ## Findings
 
 Every finding meets the bar in `SKILL.md`: named failure scenario, `file:line`, and a CONFIRMED or PLAUSIBLE verify label. Add severity, evidence, suggested correction, confidence, and the relevant rule or `sdlc/error.md` ID. Recheck each finding against existing code and tests, consolidate duplicates, and keep at most ten material findings.
 
 ## Follow-up review — delta mode
 
-After approved corrections, do not repeat a full review. Give the reviewers the previous `review.md` findings and only the correction diff.
+After approved corrections, do not repeat a full review. Give the reviewers the previous `review.md` findings, the previous `round-<N>/` files, and only the correction diff. Write the follow-up into `round-<N+1>/`. Rerun only the affected review areas in depth; unaffected reviewers still write their file (`PASS`, noting the area was unchanged) so the round can close. Close that round only when all four files exist, before any further implementation.
 
 1. Classify each prior finding as **Fixed**, **Partially addressed**, **Accepted as-is** (with the user's recorded decision), or **Superseded**.
 2. Report a new finding only when the correction diff introduced it and it is P0/P1, or it directly breaks an approved correction. Record lower-severity observations as notes, not new findings.
@@ -33,6 +46,25 @@ This keeps each correction cycle bounded to verifying what changed.
 
 ## Record
 
-Store detail in the local `project-doc/<task-or-issue-id>/review.md`: base commit, reviewed commit, diff scope, checks run, findings with status and disposition, accepted risks, and QA impact. Never commit it.
+Keep `round-<N>/` and the consolidated `review.md` in `project-doc/<task-or-issue-id>/` (or `<specDir>/` in a lane). Never commit them. They are archived or deleted with the task folder.
+
+## Human escalation gate
+
+After a round closes (including a delta round), if the change touches money or billing, auth or permissions, deploy or CI, schema or migrations, production data or email, or adds a dependency, or if a design assumption is a product decision, write `project-doc/<task-or-issue-id>/decision.md` (never committed) before a pull request is opened:
+
+```markdown
+# <TASK ID> — Decision needed
+
+## Why
+What triggered this gate.
+
+## For the human
+The exact decision or check needed.
+
+## Files to look at
+- <path>
+```
+
+Agents never merge.
 
 For an authorized GitHub issue, post only a concise sanitized summary and decisions. Post an inline pull-request comment only when the request explicitly authorizes it and the finding anchors to a changed line. Never include secrets, credentials, personal data, internal endpoints, or raw AWS data.

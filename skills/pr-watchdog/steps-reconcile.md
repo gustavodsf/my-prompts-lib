@@ -44,13 +44,13 @@ reads as a score out of five and gets misread as a severity.
 
 **Premise cap first.** A finding whose premise no lane could verify — an AWS value, a job
 that actually runs, a table holding rows — is capped at **60% regardless of lane agreement**
-and can never produce `Blocked`. Five lanes making the same unverifiable inference is one
+and can never produce `BLOCKED`. Five lanes making the same unverifiable inference is one
 guess counted five times, not five confirmations. This is not theoretical: it produced a
-false `Blocked` on a real PR. A regression claim with no citation of prior behaviour counts as
+false `BLOCKED` on a real PR. A regression claim with no citation of prior behaviour counts as
 premise-derived. See `reconciler-prompt.md`.
 
 **Absent evidence blocks.** If `ci-signal.json` shows a must-run gate skipped — **Build** or
-**the test matrix** — the verdict is `Blocked — no CI evidence`, regardless of findings.
+**the test matrix** — the verdict is `BLOCKED — no CI evidence`, regardless of findings.
 Conditional gates that skip by design (`Run Migrations` with no migrations, CDK with no infra
 change) do not count. Calibrated on real PRs: Build + tests skipped blocks; only `Run Migrations` skipped
 does not block.
@@ -58,13 +58,13 @@ does not block.
 **Verdict** — apply the standard's Phase 4 order to findings at 80% or better:
 
 1. A spec violation at 80%+, or a Critical security finding at 80%+ in code this diff
-   introduces → **Blocked**. Applies in legacy mode too.
-2. Any other Critical at 80%+ → **Changes Requested**.
-3. Otherwise → **Approved**.
+   introduces → **BLOCKED**. Applies in legacy mode too.
+2. Any other Critical at 80%+ → **CHANGES**.
+3. Otherwise → **PASS**.
 
 Two amendments for five lanes:
 
-- **A Critical at 40–60% forces at least Changes Requested.** Give the percentage.
+- **A Critical at 40–60% forces at least `CHANGES`.** Give the percentage.
 - **A Critical at 20% does not set the verdict.** It goes in an `## Escalate` block at the
   top. One in five is inside the noise floor, but a missed security hole is not something
   to bury.

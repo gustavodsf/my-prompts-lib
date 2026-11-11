@@ -29,7 +29,7 @@ changes.
 **Two rules that must not misfire:**
 
 - **`ciAvailable: false` in `meta.json` means CI has not run, which is NOT the same as a
-  required gate skipping.** Never return `Blocked — no CI evidence` in local mode. Report CI
+  required gate skipping.** Never return `BLOCKED — no CI evidence` in local mode. Report CI
   as "not run — no PR yet" and let the findings decide the verdict.
 - **The window budget does not apply.** A local run is a deliberate request, not a sweep. Say
   the cost in the report — a five-lane review is 6–60M tokens — so the choice is informed.
