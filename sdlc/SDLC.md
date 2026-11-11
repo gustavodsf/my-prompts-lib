@@ -60,7 +60,7 @@ Write a failing test when meaningful. When it is not meaningful, obtain approval
 
 Code comments must be minimal. Add one only for a non-obvious invariant, constraint, compatibility need, security tradeoff, or performance reason.
 
-Review follows [Agents per phase](#agents-per-phase): the reviewer is never the implementer. If the required reviewer is unavailable, do not report the review as complete. A standalone `sdlc-review` writes nothing; an SDLC feature review (guided or lane) keeps its record in the task folder as `review.md`, never committed and archived with the folder. Use the `sdlc-review` skill; after corrections, run it in delta mode so follow-up reviews verify only the correction diff. Open pull requests and handle reviewer comments with `sdlc-pr`.
+Review follows [Agents per phase](#agents-per-phase): the reviewer is never the implementer. If the required reviewer is unavailable, do not report the review as complete. A standalone `sdlc-review` writes nothing; an SDLC feature review (guided or lane) keeps its record in the task folder as `round-<N>/` (one file per reviewer; the round closes only when all have been delivered) and a consolidated `review.md`, never committed and archived with the folder. Never resume the implementer mid-round. If the change requires a human decision (see `skills/sdlc-review/feature-review.md`), also write `decision.md` there; agents never merge. Use the `sdlc-review` skill; after corrections, run it in delta mode so follow-up reviews verify only the correction diff. Open pull requests and handle reviewer comments with `sdlc-pr`.
 
 Use `error.md` during planning, QA, and review. A repeated failure becomes an error-catalog rule with a prevention check.
 

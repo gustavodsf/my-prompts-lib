@@ -11,10 +11,10 @@ Rules: R-xx, R-yy (from `_project/business-rules.md`)
 
 - Current behavior:
 - Desired behavior:
-- AC-1: <criterion> — acceptance test: `<test file>#<test name>`
+- AC-1: <criterion> — acceptance test: `<test file>#<test name>` — verify: <command | page | file> → <expected result>
 - AC-2:
 
-Each AC becomes a failing acceptance test before any code; done = all AC tests pass.
+Each AC becomes a failing acceptance test before any code; done = all AC tests pass. "Verify" is how someone with only the repo checks the AC: a command to run, a page and what it should show, or a file that should contain something, plus the expected result.
 - Edge cases:
 
 ## 2. Solution options and trade-offs
@@ -37,9 +37,9 @@ sequenceDiagram
 
 ## 4. Files and TDD tasks
 
-| # | AC | File (`codemap.md` path or `(new)`) | Failing test first | Verification | Status |
+| # | AC | File (`codemap.md` path or `(new)`) | Failing test first | How to verify (command / page / file + expected result) | Status |
 | --- | --- | --- | --- | --- | --- |
-| 0 | all | test files | AC acceptance tests, all red | test run shows each AC failing | pending |
+| 0 | all | test files | AC acceptance tests, all red | test run shows each AC failing for the expected reason | pending |
 | 1 | AC-1 | | | | pending |
 
 Evidence: API → curl/client with synthetic data; UI → visible flow, screenshots, console/network. AWS: not allowed | read-only, see `sdlc/SDLC.md#safety-rules`.

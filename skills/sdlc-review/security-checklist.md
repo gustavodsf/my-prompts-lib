@@ -25,9 +25,9 @@ Monorepo does not.
 
 | Situation | Severity |
 |---|---|
-| Finding in code **the diff introduces** | **Critical** → verdict `Blocked` |
+| Finding in code **the diff introduces** | **Critical** → verdict `BLOCKED` |
 | Finding in **pre-existing** code, legacy module | Warning — cite `file:line`, do not block |
-| Finding in **pre-existing** code, strict module | Critical → `Blocked` |
+| Finding in **pre-existing** code, strict module | Critical → `BLOCKED` |
 | Baseline failure on new code | Critical |
 | LLM section, no AI code in the diff | N/A — omit, no impact |
 

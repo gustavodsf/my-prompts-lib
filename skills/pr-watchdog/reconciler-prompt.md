@@ -91,13 +91,13 @@ severity. Always write the percentage.
 Verdict, applying the standard's Phase 4 order to findings at **80% or better**:
 
 1. A spec violation at 80%+, or a Critical security finding at 80%+ in code this diff
-   introduces → **Blocked**. Applies in legacy mode too.
-2. Any other Critical at 80%+ → **Changes Requested**.
-3. Otherwise → **Approved**.
+   introduces → **BLOCKED**. Applies in legacy mode too.
+2. Any other Critical at 80%+ → **CHANGES**.
+3. Otherwise → **PASS**.
 
 Two amendments:
 
-- **A Critical at 40–60% forces at least Changes Requested.** Give the percentage.
+- **A Critical at 40–60% forces at least `CHANGES`.** Give the percentage.
 - **A Critical at 20% does not set the verdict.** Put it in `## Escalate` at the top. One in
   five is inside the noise floor, but a missed security hole is not something to bury.
 
@@ -143,7 +143,7 @@ Lanes cannot reach AWS, the databases, or CI logs. So when a finding rests on a 
 of them could check, all five make the *same* inference and it arrives looking like unanimous
 verification. It is not. It is one guess counted five times.
 
-This produced a false `Blocked` on a real PR: every lane assumed a configuration flag broke two
+This produced a false `BLOCKED` on a real PR: every lane assumed a configuration flag broke two
 live assertions, when the value was never provisioned to that environment and the assertions
 had never run.
 
@@ -160,8 +160,8 @@ had never run.
 - A finding carrying an `**Unverified premise**:` line is capped at **60%** even at 5 of 5.
 - Capped findings go under **Needs human verification**, never in the blocking set, and each
   one carries the command that would settle it.
-- **A capped finding can never produce `Blocked`.** If the only thing standing between the PR
-  and Approved is a premise nobody checked, the verdict is `Changes Requested` at most, and
+- **A capped finding can never produce `BLOCKED`.** If the only thing standing between the PR
+  and `PASS` is a premise nobody checked, the verdict is `CHANGES` at most, and
   the summary must say which command decides it.
 - If a lane asserts a regression without citing prior behaviour from the merge base, hunk
   context, or a deleted spec, **treat it as premise-derived** and cap it. The lane prompt
@@ -171,7 +171,7 @@ had never run.
 
 When `meta.json` has `ciAvailable: false`, this is a pre-PR review of a working tree. CI has
 not run because there is no PR, which is **not** the same as a required gate skipping.
-**Never return `Blocked — no CI evidence` in local mode.** Report CI as "not run — no PR yet"
+**Never return `BLOCKED — no CI evidence` in local mode.** Report CI as "not run — no PR yet"
 and let the findings decide.
 
 Also carry `dirtyPaths` and `untrackedPathsIncluded` from `meta.json` into the summary header,
@@ -183,21 +183,21 @@ When `checks.txt` shows a test job skipped, the summary names the gate that caus
 report it as "unverified" and leave it there — a required check that silently skips makes the
 PR look green while proving nothing.
 
-## Blocked on absent evidence — a distinct verdict
+## BLOCKED on absent evidence — a distinct verdict
 
 `ci-signal.json` records, per review, whether a **must-run** gate skipped. Must-run means
 **Build** and **the test matrix** — the two that prove the code compiles and the suite
 actually executed. Conditional gates (`Run Migrations` with no migrations in the diff, CDK
 with no infra change) skip legitimately and do not count.
 
-**If a must-run gate skipped, the verdict is `Blocked`.** Hard gates exist to stop defects
+**If a must-run gate skipped, the verdict is `BLOCKED`.** Hard gates exist to stop defects
 reaching preprod and production; a PR where nothing ran has not earned a pass, whatever the
 findings say.
 
 Say it in the verdict line as a distinct reason, because it is not a defect in the author's
 code:
 
-> **Blocked — no CI evidence.** `Build` and `${{ matrix.test-type }} tests` skipped. Nothing
+> **BLOCKED — no CI evidence.** `Build` and `${{ matrix.test-type }} tests` skipped. Nothing
 > verified this change compiles or that its tests ran. Re-run CI; this is not a finding
 > against the diff.
 

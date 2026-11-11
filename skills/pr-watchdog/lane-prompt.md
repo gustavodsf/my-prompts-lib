@@ -78,7 +78,7 @@ counter, so any figure you state about your own usage would be invented.
 ## Output
 
 Write exactly one file: `{{OUTDIR}}/lane-{{LANE}}.md`. Use the output format in the standard,
-with this frontmatter prepended so the reconciler can read your vote without parsing prose:
+with this frontmatter prepended so the reconciler can read your vote without parsing prose. Write `PASS`, `CHANGES`, or `BLOCKED` (the older labels `Approved`, `Changes Requested`, and `Blocked` are accepted as those values):
 
 ```markdown
 ---
@@ -87,7 +87,7 @@ pr: {{PR}}
 ticket: {{TICKET}}
 sha: {{SHORT}}
 mode: STRICT | LEGACY
-verdict: Approved | Changes Requested | Blocked
+verdict: PASS | CHANGES | BLOCKED
 criticals: <count>
 warnings: <count>
 confirmed: <count>

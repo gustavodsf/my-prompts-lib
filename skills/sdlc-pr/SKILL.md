@@ -12,7 +12,9 @@ Only in lane mode (see [../../sdlc/lane-mode.md](../../sdlc/lane-mode.md) for wh
 
 ## Open
 
-Preconditions: all approved tasks are committed, required checks pass, and the `sdlc-review` record has an approved disposition for every finding. Verify `gh auth status`, the feature branch, and the base branch recorded for the task.
+Preconditions: all approved tasks are committed, required checks pass, and the `sdlc-review` record has an approved disposition for every finding (consolidated `review.md` and `round-<N>/` start with `VERDICT: PASS`, or `CHANGES`/`BLOCKED` findings the owner has disposed). Verify `gh auth status`, the feature branch, and the base branch recorded for the task.
+
+**Human escalation gate.** Before opening the pull request, apply the checklist in [../sdlc-review/feature-review.md](../sdlc-review/feature-review.md): if the change touches money or billing, auth or permissions, deploy or CI, schema or migrations, production data or email, or adds a dependency, or a design assumption is a product decision, `project-doc/<task-or-issue-id>/decision.md` must exist and the human must have decided. Agents never merge.
 
 - **Title:** `<ticket-or-issue>: <type>(<scope>): <description>`, matching the repository's Conventional Commits types and scopes when it uses them.
 - **Body:**

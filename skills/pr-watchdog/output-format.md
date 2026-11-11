@@ -8,6 +8,8 @@ should carry a copy of these templates.
 Both files are written every run. `summary.md` is what gets read. `detail.md` is what gets
 checked when someone disputes the verdict.
 
+Canonical verdict values are `PASS`, `CHANGES`, and `BLOCKED` (the older labels `Approved`, `Changes Requested`, and `Blocked` map to those and remain accepted if a lane still writes them).
+
 ---
 
 Write `<outDir>/summary.md`:
@@ -19,7 +21,7 @@ ticket: TECH-####
 sha: <short>
 title: <pr title>
 author: <login>
-verdict: Approved | Changes Requested | Blocked
+verdict: PASS | CHANGES | BLOCKED
 mode: STRICT | LEGACY
 specCompliance: <met>/<total> | Unverified
 realProblems: <count>

@@ -20,7 +20,13 @@ Measured: 143k peak context, 55 turns, 5.36M tokens billed for 37k of findings.
 
 Bullets and tables. No prose paragraphs, no hedging. State the defect and the fix.
 
+The first line of every report (after optional YAML frontmatter, as in a PR Watchdog lane) must be exactly `VERDICT: PASS`, `VERDICT: CHANGES`, or `VERDICT: BLOCKED`. These replace the older labels `Approved`, `Changes Requested`,
+and `Blocked` (`PASS` = Approved, `CHANGES` = Changes Requested, `BLOCKED` = Blocked).
+Treat a first line that still uses an old label as the mapped value.
+
 ```markdown
+VERDICT: PASS | CHANGES | BLOCKED
+
 ## Spec compliance
 | AC | Status | Evidence (file:line) |
 
@@ -42,11 +48,10 @@ Coverage not measurable.
 ## Not covered
 Areas the diff touches that this review did not reach. `None` if none.
 
-VERDICT: Approved | Changes Requested | Blocked
 ```
 
-**Verdict rules** — Blocked = a spec violation, a Critical security finding in code this diff
-introduces, or a must-run CI gate (Build, tests) skipped. Changes Requested = any other
-Critical. Approved = otherwise.
+**Verdict rules** — `BLOCKED` = a spec violation, a Critical security finding in code this
+diff introduces, or a must-run CI gate (Build, tests) skipped. `CHANGES` = any other
+Critical. `PASS` = otherwise.
 
-A capped premise-derived finding **cannot produce Blocked** on its own.
+A capped premise-derived finding **cannot produce `BLOCKED`** on its own.
