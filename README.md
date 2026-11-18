@@ -81,8 +81,8 @@ On macOS or Linux, `--track` can also schedule two autonomous lanes that run Cla
 ./scripts/install.sh --track https://github.com/pastor-ia/app --lanes issue,ci --checkout /absolute/path/to/project/app --replace
 ```
 
-- **issue lane** (every 15 minutes): takes one open issue written by the owner and advances it one stage per run. It posts the plan from `sdlc-plan` and waits for an `aprovado` comment, implements with TDD and posts progress, reviews with `sdlc-review` (Codex as the opposite agent) and waits for `aprovado: 1, 3` / `all` / `none`, applies the selected fixes, runs `sdlc-qa`, publishes sanitized `sdlc-evidence` with screenshots on the orphan `qa-evidence` branch, and opens the pull request with `sdlc-pr`. Merging stays with you.
-- **ci lane** (7 minutes later): handles owner comments on open pull requests through `sdlc-pr` feedback, fixes broken pull request pipelines, and diagnoses failed release or deploy runs with a fix pull request or an issue. It never triggers releases or deploys.
+- **issue lane** (every 15 minutes): takes one open issue written by the owner and advances it one stage per run. It posts the plan from `sdlc-plan` (dispatched to Codex) and waits for an `aprovado` comment, implements with Codex (tests written after the change against each AC's how-to-verify) and posts progress, reviews with `sdlc-review` (Grok; plus Codex UI/UX lenses when the change has a UI) and waits for `aprovado: 1, 3` / `all` / `none`, applies the selected fixes, runs `sdlc-qa` via Codex, publishes sanitized `sdlc-evidence` with screenshots on the orphan `qa-evidence` branch, and opens the pull request with `sdlc-pr`. Merging stays with you.
+- **ci lane** (7 minutes later): handles owner comments on open pull requests through `sdlc-pr` feedback, dispatches Codex as the fixer for broken pull request pipelines, reviews those fixes with Grok, and diagnoses failed release or deploy runs with a fix pull request or an issue. It never triggers releases or deploys.
 
 Options:
 
@@ -123,7 +123,7 @@ scripts\install.bat --track https://github.com/OWNER/REPO --uninstall
 - Guided ClickUp/Jira work keeps the human at approval gates and never accesses AWS.
 - GitHub tracking begins only after the persisted authorization and remains read-only when scheduled, unless you opt into autonomous lanes; their only approvals are the owner's `aprovado` comments on the issue. Interactive work keeps task artifacts local and requires human approval before external writes.
 - API validation uses visible terminal HTTP evidence. UI/E2E validation uses a visible browser and sanitized screenshots or console/network evidence.
-- Claude work is reviewed in Codex and Codex work in Claude, with independent correctness, performance, security, and duplication review areas.
+- Implementation is reviewed by an agent that did not implement it (default: Codex implements, Grok reviews). When the change has a UI, Codex also runs UI and UX lenses in a fresh read-only session. Tests are written after the implementation against each AC's how-to-verify.
 
 ## Documentation model (Elephant / Goldfish)
 
@@ -145,13 +145,13 @@ See [sdlc/SDLC.md](sdlc/SDLC.md) and [sdlc/goldfish.md](sdlc/goldfish.md). Agent
 | [sdlc-project-context](skills/sdlc-project-context/SKILL.md) | Build the durable per-project context in `project-doc/_project/` (INDEX, one-page architecture, business rules, decisions) and the generated `codemap.md` |
 | [sdlc-plan](skills/sdlc-plan/SKILL.md) | Resolve the ticket or authorized issue, write a ≤150-line `design.md`, and run the Goldfish check |
 | [sdlc-intake](skills/sdlc-intake/SKILL.md) | Bug or feature, then at most 5 questions per round before the design (lane: `intake` comment gate) |
-| [sdlc-implement](skills/sdlc-implement/SKILL.md) | Acceptance tests from `design.md` first (red), then code until all pass |
+| [sdlc-implement](skills/sdlc-implement/SKILL.md) | Implement the approved design, then write acceptance tests against each AC's how-to-verify until all pass |
 | [sdlc-qa](skills/sdlc-qa/SKILL.md) | Plan and run proportionate QA through visible terminal or browser paths |
 | [sdlc-evidence](skills/sdlc-evidence/SKILL.md) | Capture and index sanitized API or UI/E2E evidence |
-| [sdlc-review](skills/sdlc-review/SKILL.md) | The review standard (find → verify → sweep → classify, with a security checklist) plus the [feature review](skills/sdlc-review/feature-review.md): cross-agent, four areas, and bounded delta reviews after corrections |
+| [sdlc-review](skills/sdlc-review/SKILL.md) | The review standard (find → verify → sweep → classify, with a security checklist) plus the [feature review](skills/sdlc-review/feature-review.md): one Grok review, Codex UI/UX lenses when the change has a UI, and bounded delta reviews after corrections |
 | [sdlc-pr](skills/sdlc-pr/SKILL.md) | Open the pull request and address reviewer comments, with explicit approval for every external write |
 | [sdlc-github-issue](skills/sdlc-github-issue/SKILL.md) | Read-only issue monitoring and the authorized `vamos trabalhar <issue>` lifecycle |
-| [pr-watchdog](skills/pr-watchdog/SKILL.md) | Five-lane, read-only pull request review that runs the `sdlc-review` standard; see its [README](skills/pr-watchdog/README.md) |
+| [pr-watchdog](skills/pr-watchdog/SKILL.md) | Read-only pull request review with 1–2 Codex/Grok lanes running the `sdlc-review` standard; see its [README](skills/pr-watchdog/README.md) |
 
 Shared rules live in [sdlc/SDLC.md](sdlc/SDLC.md), the error catalog in [sdlc/error.md](sdlc/error.md), and local document templates in [sdlc/templates/](sdlc/templates/). Each skill links to them with a relative path, which resolves both inside this clone and through the installed links.
 

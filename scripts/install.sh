@@ -504,7 +504,9 @@ build_lane_tools() {
   lane_gh_bin="$(resolve_tool_path gh "$gh_bin")" || fail "gh is required by the lanes but was not found: $gh_bin"
   lane_git_bin="$(resolve_tool_path git "$git_bin")" || fail "git is required by the lanes but was not found: $git_bin"
   lane_codex_bin="$(resolve_tool_path codex "${CODEX_BIN:-codex}")" || lane_codex_bin=""
-  [[ "$lanes" != *issue* || -n "$lane_codex_bin" ]] || fail "codex is required by the issue lane but was not found: ${CODEX_BIN:-codex}"
+  if [[ "$lanes" == *issue* || "$lanes" == *ci* ]]; then
+    [[ -n "$lane_codex_bin" ]] || fail "codex is required by the issue and ci lanes but was not found: ${CODEX_BIN:-codex}"
+  fi
   # Optional agents (sdlc/agents.yml): detected when present, otherwise the fallback rule applies.
   lane_grok_bin="$(resolve_tool_path grok "${GROK_BIN:-grok}")" || lane_grok_bin=""
   lane_gemini_bin="$(resolve_tool_path gemini "${GEMINI_BIN:-gemini}")" || lane_gemini_bin=""

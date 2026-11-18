@@ -27,12 +27,16 @@ done < <(find "$root/skills" "$root/sdlc" "$root/evals" "$root/README.md" "$root
 # 3. agents.yml: no self-review
 phase() { sed -nE "s/^  $1: *([a-z]+).*/\1/p" "$root/sdlc/agents.yml"; }
 d=$(phase design); g=$(phase goldfish); i=$(phase implement); r=$(phase review); t=$(phase tiebreak)
-for a in "$d" "$g" "$i" "$r" "$t"; do
+q=$(phase qa); u=$(phase review_ui_ux)
+for a in "$d" "$g" "$i" "$r" "$t" "$q" "$u"; do
   [[ " claude codex grok gemini " == *" $a "* ]] || bad "agents.yml: unknown agent '$a'"
 done
 [[ "$g" != "$d" ]] || bad 'agents.yml: goldfish equals design'
 [[ "$r" != "$i" ]] || bad 'agents.yml: review equals implement'
 [[ "$t" != "$i" && "$t" != "$r" ]] || bad 'agents.yml: tiebreak equals implement or review'
+# review_ui_ux may equal implement (documented exception). qa is not a reviewer of implement.
+[[ -n "$q" ]] || bad 'agents.yml: qa phase is missing'
+[[ -n "$u" ]] || bad 'agents.yml: review_ui_ux phase is missing'
 # The resolver accepts the table when every agent with a command is installed.
 tmp="$(mktemp -d)"; : > "$tmp/conf"
 for a in claude codex grok gemini; do printf '#!/bin/sh\n' > "$tmp/$a"; chmod +x "$tmp/$a"; printf '%s_bin=%s\n' "$a" "$tmp/$a" >> "$tmp/conf"; done

@@ -43,9 +43,9 @@ Use these checks in planning, QA, and review. Add an entry when a failure repeat
 - Seen: 0
 
 ### ERR-006 — Cross-agent review skipped
-- Symptom: Claude work is approved without Codex review, or the inverse.
+- Symptom: Work is approved without an independent `review` agent (the reviewer must not be the implementer).
 - How to check: Record the implementation and reviewer agent in `review.md`.
-- Prevention: Block completion when the opposite agent is unavailable.
+- Prevention: Block completion when the `review` agent is unavailable or equals the implementer.
 - Seen: 0
 
 ### ERR-007 — Unsafe managed-file replacement

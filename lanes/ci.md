@@ -9,6 +9,7 @@ Each run handles at most ONE item (one pull request or one failed workflow run),
 
 - This run is unattended: `lane.sh` (`lane.ps1` on Windows) started it from cron (Task Scheduler on Windows) with `claude -p`, permission prompts off and the lane deny rules on. It already holds the lane lock; do not create another one.
 - Configuration values come only from the block above: `repo`, `owner`, `checkout`, `worktrees`, `docs`, `state`. Prefer absolute paths built from them.
+- `agents` in the block is the resolved table from `sdlc/agents.yml`. The ci fixer is the `implement` agent (Codex). Dispatch every fix and review with `<agent_runner> implement` or `<agent_runner> review`; never call `codex` or `grok` directly, and do not write the fix yourself. `review=blocked` is not an agent.
 - Use `gh` with `-R <repo>`. Post every comment with `--body-file <absolute path>`.
 - If a bot token is configured, `GH_TOKEN` is already set in your environment by the runner, so `gh` acts as the bot account; check with `gh api user --jq .login`. Never read, print, copy or pass the token yourself, and never open `<state>/bot-token`.
 - State file: `<state>/ci-state.json` with `prs` (PR number → `{ lastHandledCommentId, lastHandledReviewCommentId, lastFailedShaReported, worktree, branch, log[] }`) and `runs` (run id → `{ status, branch, prUrl, log[] }`). Create it if missing. Append `"<iso-time> <what happened>"` to the relevant `log` after every step and save immediately.
@@ -32,23 +33,23 @@ Every comment starts with `<!-- claude-agent:ci -->`, then `> 🤖 **Claude** ·
 
 ## Delta review
 
-You are the fixer, so you never review your own fix. Write the `sdlc-review` delta-mode instructions plus the correction diff to a prompt file and run `<agent_runner> review <prompt-file> <worktree>` (`agents` in the block already resolves `review` to an agent other than claude). Fix its blocking findings once and say in the reply which agent reviewed. If `review=blocked`, do not push: comment that no independent reviewer is configured and wait for the owner.
+The ci lane fixer is the `implement` agent (Codex). You orchestrate only: dispatch the fix, then dispatch review. Write the `sdlc-review` delta-mode instructions plus the correction diff to a prompt file and run `<agent_runner> review <prompt-file> <worktree>` (`agents` in the block already resolves `review` to an agent other than the implementer, default Grok). Dispatch `implement` once more for blocking findings, then say in the reply which agent reviewed. If `review=blocked`, do not push: comment that no independent reviewer is configured and wait for the owner.
 
 ## What to look for (pick the first item that needs action)
 
 1. **Owner comments on open pull requests.** For every open trusted PR (`gh pr list -R <repo> --state open --json number,headRefName,author,isCrossRepository,headRepositoryOwner`), read issue comments (`gh pr view <N> -R <repo> --json comments`) and inline review comments (`gh api repos/<repo>/pulls/<N>/comments`). An owner comment newer than the stored id needs action:
    - add an `eyes` reaction (`repos/<repo>/issues/comments/<id>/reactions`, or `repos/<repo>/pulls/comments/<id>/reactions` for inline ones) and store the id as handled;
    - run `sdlc-pr` (feedback) for that comment: classify it, and treat the owner's comment itself as the approval to implement it. If it is unclear or out of scope, reply with one concise question instead of guessing;
-   - implement in the PR worktree with a failing test when meaningful, run the local checks, commit, run the delta review (below) on the correction diff, push to the PR branch, and reply with what was done, the commit SHA, the checks run, and that CI is re-running.
+   - dispatch `<agent_runner> implement` in the PR worktree: apply the change, then add or update tests against the observed failure or the AC's how-to-verify, run the local checks, commit, run the delta review (below) on the correction diff, push to the PR branch, and reply with what was done, the commit SHA, the checks run, and that CI is re-running.
 2. **Broken PR pipeline.** For each open trusted PR, check `gh pr checks <N> -R <repo>`. If a check failed on the current head SHA and that SHA is not `lastFailedShaReported`:
    - read the logs (`gh run list -R <repo> --branch <branch> --limit 5`, `gh run view <id> -R <repo> --log-failed`);
-   - cause clearly in this PR's code (lint, formatter, typecheck, a test broken by the change): fix it, run local checks, commit, run the delta review (below), push, and comment with the cause and the fix;
+   - cause clearly in this PR's code (lint, formatter, typecheck, a test broken by the change): dispatch `<agent_runner> implement` to fix it and add or update tests against the failure, run local checks, commit, run the delta review (below), push, and comment with the cause and the fix;
    - flaky or infrastructural (timeouts, network, runner errors): change nothing; comment that the failure looks flaky and ask the owner to re-run the failed jobs. The lane never re-runs workflows itself;
    - failing on the default branch too, or caused outside the PR: change nothing, comment a short diagnosis and wait for the owner;
    - store the SHA in `lastFailedShaReported` so each failure is handled once.
 3. **Failed release or deploy runs.** List recent runs of the repository's release and deploy workflows (`gh workflow list -R <repo>`, then `gh run list -R <repo> --workflow <file> --limit 5`). For a failed run not yet in `runs`:
    - read `gh run view <id> -R <repo> --log-failed` and diagnose;
-   - code or configuration problem in the repository: create a worktree on a new branch `fix/release-<runId>` from a freshly fetched `origin/<default branch>`, fix it, run local checks, commit, run the delta review (below), push the branch and open a PR with `sdlc-pr` (open). Its body starts with the bot header, explains the failing step, a sanitized error excerpt, the root cause and the fix, says the owner must re-run the workflow after merging, and ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`;
+   - code or configuration problem in the repository: create a worktree on a new branch `fix/release-<runId>` from a freshly fetched `origin/<default branch>`, dispatch `<agent_runner> implement` to fix it and add or update tests against the failure, run local checks, commit, run the delta review (below), push the branch and open a PR with `sdlc-pr` (open). Its body starts with the bot header, explains the failing step, a sanitized error excerpt, the root cause and the fix, says the owner must re-run the workflow after merging, and ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`;
    - credentials, cloud permissions, quotas or anything outside the code: change no code; open an issue titled `Release failed: <short cause>` with a sanitized diagnosis and the manual steps for the owner;
    - record the run in `runs` with what was done.
 

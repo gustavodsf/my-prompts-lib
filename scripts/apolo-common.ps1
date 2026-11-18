@@ -261,7 +261,7 @@ function Resolve-AgentTable([string]$Table, [string]$Conf = '', [string]$Impleme
   $phases = Get-YamlSection $lines 'phases'
   $writers = ' ' + (Get-YamlScalar $lines 'write_capable') + ' '
   $known = $script:KnownAgents
-  foreach ($p in @('design', 'goldfish', 'implement', 'review', 'tiebreak')) {
+  foreach ($p in @('design', 'goldfish', 'implement', 'review', 'tiebreak', 'qa', 'review_ui_ux')) {
     $a = Get-YamlEntry $phases $p '([a-z]+)'
     if (-not $a) { throw "agents.yml: phase $p is missing" }
     if ($known -notcontains $a) { throw "agents.yml: phase $p uses unknown agent '$a'" }
@@ -293,15 +293,24 @@ function Resolve-AgentTable([string]$Table, [string]$Conf = '', [string]$Impleme
   }
   if ($pool.Count -eq 0) { $pool = @($design) }
   $result = New-Object System.Collections.Specialized.OrderedDictionary
+  # review_ui_ux may be the same CLI as implement (fresh read-only session). qa falls back to implement.
+  $qa = Get-YamlEntry $phases 'qa' '([a-z]+)'
+  if (-not (Test-AgentAvailable $lines $Conf $qa)) { $qa = $impl }
+  $ui = Get-YamlEntry $phases 'review_ui_ux' '([a-z]+)'
+  if (-not (Test-AgentAvailable $lines $Conf $ui)) { $ui = 'blocked' }
   $result['design'] = $design
   $result['goldfish'] = $goldfish
   $result['implement'] = $impl
   $result['review'] = $review
   $result['tiebreak'] = $tiebreak
+  $result['qa'] = $qa
+  $result['review_ui_ux'] = $ui
   $result['goldfish_pool'] = ($pool -join ',')
   return $result
 }
 
 function Format-AgentTable($Resolved) {
-  return (($Resolved.Keys | ForEach-Object { "$_=$($Resolved[$_])" }) -join "`n")
+  $order = @('design', 'goldfish', 'implement', 'review', 'tiebreak', 'qa', 'review_ui_ux', 'goldfish_pool')
+  $keys = @($order | Where-Object { $Resolved.Contains($_) }) + @($Resolved.Keys | Where-Object { $order -notcontains $_ })
+  return (($keys | ForEach-Object { "$_=$($Resolved[$_])" }) -join "`n")
 }

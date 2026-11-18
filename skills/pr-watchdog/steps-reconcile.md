@@ -2,18 +2,14 @@
 
 Read in full before Step 5. Rules in [SKILL.md](SKILL.md) still apply.
 
-## Step 5 — Reconcile — on Fable, as a subagent
+## Step 5 — Reconcile — you, the orchestrator
 
-Spawn **one** Agent with `model: "fable"` and `subagent_type: "general-purpose"`, using
-`reconciler-prompt.md` beside this file — see *The model contract*. Do not reconcile inline.
+Apply `reconciler-prompt.md` beside this file in this session and write `<outDir>/summary.md`
+yourself. Do not spawn a Fable (or any other) subagent to reconcile. See *The model contract*.
 
-Two reasons. **Judgement is the bottleneck here** — deciding whether two differently-worded
-findings are the same defect is harder than finding them was, and it is one call on ~5% of
-the run's tokens, so the stronger model costs almost nothing. **And a fresh context is
-cleaner** — the reconciler sees five lane reports and the ticket, not your orchestration
-history.
-
-The reconciler writes `<outDir>/summary.md` itself. Read it afterwards for your report.
+With one or two short lane reports, a separate expensive model is not worth it. Stay on the
+ticket, the lane files and the CI signal; do not lean on earlier orchestration chatter when
+deciding whether two wordings are the same defect.
 
 **Re-reviews.** When `meta.json` has a non-empty `previousSha`, `prep.sh` has already copied
 the earlier pass to `<outDir>/previous-summary.md`. That file goes to the **reconciler only**
@@ -21,31 +17,24 @@ the earlier pass to `<outDir>/previous-summary.md`. That file goes to the **reco
 Resolved / Still stands / New, never to detect. A finding exists in this pass only if this
 pass's lanes found it.
 
-If Fable is unavailable, stop and tell the user rather than
-reconciling on another model — the reconciler is the one place the stronger model is worth
-its cost, and a silent downgrade there is what `check-panel.sh` exists to catch.
-
 ### What the reconciler must do
 
-Only now read all five lane files. Match findings across lanes by **file, line and claim** —
-not by issue number. Two lanes describing one defect in different words is agreement; count
-it once.
+Only now read the lane files (`lane-codex.md` and/or `lane-grok.md`). Match findings across
+lanes by **file, line and claim** — not by issue number. Two lanes describing one defect in
+different words is agreement; count it once.
 
-| Lanes agreeing | Confidence | Treat as |
-|---|---|---|
-| 5 of 5 | 100% | real |
-| 4 of 5 | 80% | real |
-| 3 of 5 | 60% | needs a human look |
-| 2 of 5 | 40% | needs a human look |
-| 1 of 5 | 20% | probably noise — listed, not hidden |
+| Lanes agreeing | Treat as |
+|---|---|
+| 2 of 2 | confirmed |
+| 1 of 2 | a lead, not a verdict |
+| 1 of 1 (single-lane run) | a lead — no agreement confidence |
 
-**Always print the percentage, never the fraction.** `40%` reads as a confidence; `2/5`
-reads as a score out of five and gets misread as a severity.
+State the count as `2/2` or `1/2`, not a percentage calibrated on five Opus lanes.
 
 **Premise cap first.** A finding whose premise no lane could verify — an AWS value, a job
 that actually runs, a table holding rows — is capped at **60% regardless of lane agreement**
-and can never produce `BLOCKED`. Five lanes making the same unverifiable inference is one
-guess counted five times, not five confirmations. This is not theoretical: it produced a
+and can never produce `BLOCKED`. Two lanes making the same unverifiable inference is one
+guess counted twice, not two confirmations. This is not theoretical: it produced a
 false `BLOCKED` on a real PR. A regression claim with no citation of prior behaviour counts as
 premise-derived. See `reconciler-prompt.md`.
 
@@ -55,28 +44,24 @@ Conditional gates that skip by design (`Run Migrations` with no migrations, CDK 
 change) do not count. Calibrated on real PRs: Build + tests skipped blocks; only `Run Migrations` skipped
 does not block.
 
-**Verdict** — apply the standard's Phase 4 order to findings at 80% or better:
+**Verdict** — apply the standard's Phase 4 order to **confirmed** (`2/2`) findings only:
 
-1. A spec violation at 80%+, or a Critical security finding at 80%+ in code this diff
+1. A confirmed spec violation, or a confirmed Critical security finding in code this diff
    introduces → **BLOCKED**. Applies in legacy mode too.
-2. Any other Critical at 80%+ → **CHANGES**.
+2. Any other confirmed Critical → **CHANGES**.
 3. Otherwise → **PASS**.
 
-Two amendments for five lanes:
-
-- **A Critical at 40–60% forces at least `CHANGES`.** Give the percentage.
-- **A Critical at 20% does not set the verdict.** It goes in an `## Escalate` block at the
-  top. One in five is inside the noise floor, but a missed security hole is not something
-  to bury.
+- **A Critical lead (`1/2` or `1/1`) does not set the verdict.** It goes in an `## Escalate` block at the
+  top. One of two is not confirmation, but a missed security hole is not something to bury.
 
 The standard has no 0–10 score table, so do not invent one. The issue list is the verdict.
 
-An AC counts as met at 80% or better. If `ticket.md` is `UNAVAILABLE`, drop the AC table and
+An AC counts as met when both lanes (or the only lane, noted as unverified agreement) say it is met. If `ticket.md` is `UNAVAILABLE`, drop the AC table and
 write the single line `Unverified — ticket not fetched`.
 
 ### The summary is negatives only
 
-`summary.md` exists to tell someone what is wrong with the PR. The five lane files are the
+`summary.md` exists to tell someone what is wrong with the PR. The lane files are the
 full record — do not duplicate them.
 
 **Cut before writing:**
@@ -85,7 +70,7 @@ full record — do not duplicate them.
 - The per-lane verdict table. Nobody acts on it.
 - Style and consistency findings: optional-chaining, naming, one pattern versus another,
   formatting. Even at 100%. Lane agreement tracks how *obvious* a finding is, not how much
-  it *matters* — a nit five lanes spot is still a nit.
+  it *matters* — a nit both lanes spot is still a nit.
 - A "dropped as nits" section. Do not list what you cut.
 - The merged PR-description block, edge cases, and untested-path inventory.
 
@@ -157,14 +142,12 @@ evaluation time rather than a permanently broken workflow.
 ~/.claude/skills/pr-watchdog/scripts/check-panel.sh <outDir>
 ```
 
-Refuses a run that is not five lanes on the right models. Checks all five lane files exist
-and are non-empty, that no sixth lane appeared, and that `models.json` records `opus` lanes
-and a `fable` reconciler.
+Refuses a run that is not 1–2 Codex/Grok lanes with reconciler orchestrator. Checks the lane files exist
+and are non-empty, that only `lane-codex.md` and/or `lane-grok.md` appeared, and that
+`models.json` records those CLIs and `reconciler: "orchestrator"`.
 
-**If it fails, say so at the top of your report and do not present the agreement percentages
-as confidence.** Four lanes and five lanes produce numbers that look identical and mean
-different things, and nothing in `summary.md` distinguishes them. `finish.sh` runs this too
-and will refuse to record the run.
+**If it fails, say so at the top of your report and do not present the agreement counts
+as confidence.** `finish.sh` runs this too and will refuse to record the run.
 
 ## Step 6 — Record
 
@@ -179,9 +162,9 @@ pushes. Then loop to Step 2.
 ## Step 7 — Report
 
 One table across the PRs handled: PR, ticket, mode, verdict, real problems, AC met, path to
-`summary.md`. Then `## Actions for you` — only PRs with a Critical at 80%+, an escalated 20%
-Critical, or an unmet acceptance criterion, most blocking first.
+`summary.md`. Then `## Actions for you` — only PRs with a confirmed Critical, an escalated Critical lead,
+or an unmet acceptance criterion, most blocking first.
 
-Percentages in chat too, never fractions.
+Use `2/2` and `1/2` in chat, not percentages from the old five-lane scale.
 
 Do not paste full reviews into chat. The files are the deliverable.

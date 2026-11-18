@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # prep-local.sh [base]
 # Builds a review bundle from the LOCAL working tree — no PR required. Same bundle shape as
-# prep.sh, so the five lanes and the reconciler need no changes.
+# prep.sh, so the lanes and the reconciler need no changes.
 #
 # Why a snapshot commit and not the working tree directly: lanes must all review the same
 # bytes. If they read the live tree while you keep typing, they review different code and the

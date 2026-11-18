@@ -27,7 +27,7 @@ esac
 phase="${1:?phase}"; prompt_file="${2:?prompt file}"; cwd="${3:?cwd}"; metrics="${4:-}"
 conf="$here/project.conf"; table="$here/lanes/agents.yml"
 [[ -f "$prompt_file" && -d "$cwd" ]] || { echo "agent-run: prompt file or cwd missing" >&2; exit 2; }
-case "$phase" in design|goldfish|goldfish-panel|implement|review|tiebreak) ;; *) echo "agent-run: unknown phase $phase" >&2; exit 2 ;; esac
+case "$phase" in design|goldfish|goldfish-panel|implement|review|tiebreak|qa|review_ui_ux) ;; *) echo "agent-run: unknown phase $phase" >&2; exit 2 ;; esac
 
 resolved="$("$here/resolve-agents.sh" "$table" "$conf" ${APOLO_SDLC_IMPLEMENTER:+--implementer "$APOLO_SDLC_IMPLEMENTER"})"
 
@@ -50,7 +50,7 @@ run_agent() { # agent phase prompt-file
   local agent="$1" ph="$2" prompt="$3" bin template cmd sandbox=read-only
   bin="$(sed -nE "s/^${agent}_bin=(.*)$/\1/p" "$conf" | head -1)"
   template="$(sed -nE "/^commands:/,/^[a-z]/ s/^  $agent: *'(.*)'.*$/\1/p" "$table" | head -1)"
-  [[ "$ph" == implement || "$ph" == design ]] && sandbox=workspace-write
+  [[ "$ph" == implement || "$ph" == design || "$ph" == qa ]] && sandbox=workspace-write
   cmd="${template//\{bin\}/$(q "$bin")}"
   cmd="${cmd//\{prompt_file\}/$(q "$prompt")}"
   cmd="${cmd//\{cwd\}/$(q "$cwd")}"
@@ -79,7 +79,7 @@ declare -A focus=(
   [comprehension]='Explain the plan back in at most 10 lines; list every path#symbol not in codemap.md and not marked (new).'
   [adversarial]='Find edge cases, races, bad inputs and failure modes the design misses; say how it could break.'
   [security]='Check secrets, permissions, AWS use (read-only at most), personal data and privacy.'
-  [testability]='Check every AC names a concrete, automatable test and every task has a file and a failing test first.'
+  [testability]='Check every AC has a concrete, automatable verification (command, page, or file plus expected result) and every task has a file.'
   [simplicity]='Find over-scope and a simpler option that meets the same ACs.'
 )
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT

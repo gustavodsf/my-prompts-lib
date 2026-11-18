@@ -32,7 +32,7 @@ available() {
 }
 die() { echo "agents.yml: $1" >&2; exit 1; }
 
-for p in design goldfish implement review tiebreak; do
+for p in design goldfish implement review tiebreak qa review_ui_ux; do
   a="$(phase_of "$p")"
   [[ -n "$a" ]] || die "phase $p is missing"
   [[ " ${known[*]} " == *" $a "* ]] || die "phase $p uses unknown agent '$a'"
@@ -69,4 +69,9 @@ for a in $(sed -nE 's/^goldfish_agents: *//p' "$table"); do
   available "$a" && pool="${pool:+$pool,}$a"
 done
 [[ -n "$pool" ]] || pool="$design"
-printf 'design=%s\ngoldfish=%s\nimplement=%s\nreview=%s\ntiebreak=%s\ngoldfish_pool=%s\n' "$design" "$goldfish" "$impl" "$review" "$tiebreak" "$pool"
+# review_ui_ux may be the same CLI as implement (documented exception: fresh read-only session).
+# qa is not a reviewer of implement; fall back to implement if its agent is missing.
+qa="$(phase_of qa)"; available "$qa" || qa="$impl"
+ui="$(phase_of review_ui_ux)"; available "$ui" || ui="blocked"
+
+printf 'design=%s\ngoldfish=%s\nimplement=%s\nreview=%s\ntiebreak=%s\nqa=%s\nreview_ui_ux=%s\ngoldfish_pool=%s\n' "$design" "$goldfish" "$impl" "$review" "$tiebreak" "$qa" "$ui" "$pool"

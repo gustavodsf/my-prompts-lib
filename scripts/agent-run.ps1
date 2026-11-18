@@ -58,7 +58,7 @@ $metrics = ''; if ($args.Count -gt 3) { $metrics = [string]$args[3] }
 if (-not (Test-Path -LiteralPath $promptFile -PathType Leaf) -or -not (Test-Path -LiteralPath $cwd -PathType Container)) {
   Write-ErrorLine 'agent-run: prompt file or cwd missing'; exit 2
 }
-if (@('design', 'goldfish', 'goldfish-panel', 'implement', 'review', 'tiebreak') -notcontains $phase) {
+if (@('design', 'goldfish', 'goldfish-panel', 'implement', 'review', 'tiebreak', 'qa', 'review_ui_ux') -notcontains $phase) {
   Write-ErrorLine "agent-run: unknown phase $phase"; exit 2
 }
 try {
@@ -97,7 +97,7 @@ function Start-Agent([string]$Agent, [string]$Phase, [string]$Prompt) {
   $bin = Get-ConfValue $conf "${Agent}_bin"
   $template = Get-AgentCommand $tableLines $Agent
   $sandbox = 'read-only'
-  if ($Phase -eq 'implement' -or $Phase -eq 'design') { $sandbox = 'workspace-write' }
+  if ($Phase -eq 'implement' -or $Phase -eq 'design' -or $Phase -eq 'qa') { $sandbox = 'workspace-write' }
   $values = @{ '{bin}' = $bin; '{prompt_file}' = $Prompt; '{cwd}' = $cwd; '{sandbox}' = $sandbox
     '{deny_file}' = (Join-Path (Join-Path $here 'lanes') 'deny.json') }
   $tokens = @($template -split ' +' | Where-Object { $_ })
@@ -134,7 +134,7 @@ $focus = @{
   comprehension = 'Explain the plan back in at most 10 lines; list every path#symbol not in codemap.md and not marked (new).'
   adversarial = 'Find edge cases, races, bad inputs and failure modes the design misses; say how it could break.'
   security = 'Check secrets, permissions, AWS use (read-only at most), personal data and privacy.'
-  testability = 'Check every AC names a concrete, automatable test and every task has a file and a failing test first.'
+  testability = 'Check every AC has a concrete, automatable verification (command, page, or file plus expected result) and every task has a file.'
   simplicity = 'Find over-scope and a simpler option that meets the same ACs.'
 }
 foreach ($lens in $lenses) { if (-not $focus.ContainsKey($lens)) { Write-ErrorLine "agent-run: unknown goldfish lens $lens"; exit 2 } }

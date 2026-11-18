@@ -71,7 +71,7 @@ comm -13 <(awk '{print $2}' "$OUT/files.txt" | sort) <(sort "$OUT/files-all.txt"
 git log --oneline "$MB..$SHA" > "$OUT/commits.txt"
 
 # A merged (or already-in-base) PR has merge-base == head, so the diff is empty. Refuse
-# rather than hand five lanes an empty bundle to review.
+# rather than hand the lanes an empty bundle to review.
 if [ ! -s "$OUT/files.txt" ]; then
   git worktree remove --force "$WT" 2>/dev/null || true
   echo "PR $PR has an empty diff against $BASE (merge-base == head)." >&2
@@ -169,7 +169,7 @@ jq -n --arg pr "$PR" --arg sha "$SHA" --arg short "$SHORT" --arg wt "$WT" \
     previousSha:$prev, ghAccount:$ghAccount}' \
   | tee "$OUT/meta.json"
 
-# Historical evidence, gathered once for all five lanes (see context.sh header).
+# Historical evidence, gathered once for every lane (see context.sh header).
 # Must run after meta.json exists -- context.sh reads mergeBase and sha from it.
 "$SKILLDIR/scripts/context.sh" "$OUT" > "$OUT/context-stats.json" \
   || echo '{"error":"context gathering failed"}' > "$OUT/context-stats.json"

@@ -1,6 +1,6 @@
 ---
 name: sdlc-review
-description: Review a diff to the DeliverThat engineering standard — find candidates, verify each one, sweep for gaps, classify. Every finding carries a named failure scenario, a file:line, and a CONFIRMED/PLAUSIBLE verify label. Use when reviewing a branch or PR before opening it, checking your own changes, running the SDLC final or follow-up feature review, or asking "would the watchdog flag this". Also the standard the PR Watchdog's five lanes run. Triggers on "review this", "review my branch", "check my changes", "watchdog review", "would this pass review", "final review".
+description: Review a diff to the DeliverThat engineering standard — find candidates, verify each one, sweep for gaps, classify. Every finding carries a named failure scenario, a file:line, and a CONFIRMED/PLAUSIBLE verify label. Use when reviewing a branch or PR before opening it, checking your own changes, running the SDLC final or follow-up feature review, or asking "would the watchdog flag this". Also the standard the PR Watchdog's Codex/Grok lanes run. Triggers on "review this", "review my branch", "check my changes", "watchdog review", "would this pass review", "final review".
 argument-hint: "[task identifier or issue number]"
 version: 1.1.0
 ---
@@ -11,7 +11,7 @@ version: 1.1.0
 
 Only in lane mode (see [../../sdlc/lane-mode.md](../../sdlc/lane-mode.md) for when it is active), also apply that file; in every other session, including pr-watchdog lanes, ignore it.
 
-**This file is the review standard**, run by `/sdlc-review` on your own branch and by the PR Watchdog's five lanes. Callers and lineage: [lineage.md](lineage.md).
+**This file is the review standard**, run by `/sdlc-review` on your own branch and by the PR Watchdog's 1–2 Codex/Grok lanes. Callers and lineage: [lineage.md](lineage.md).
 
 ## Scope — establish your inputs first
 
@@ -19,7 +19,7 @@ This file runs in two places and the inputs arrive differently. **Work out which
 before Phase 1**, then read the right column throughout.
 
 **Three callers**, not two: `/sdlc-review` (you, one reviewer), `/pr-watchdog --local`
-(five lanes on your working tree — bundle paths apply, `ciAvailable: false`), and a watchdog
+(1–2 Codex/Grok lanes on your working tree — bundle paths apply, `ciAvailable: false`), and a watchdog
 lane on an open PR. The two bundle-backed callers read the right-hand column.
 
 | Input | Standalone (`/sdlc-review`) | Watchdog lane or `--local` |

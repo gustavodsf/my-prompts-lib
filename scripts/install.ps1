@@ -169,7 +169,7 @@ if ($trackUrl -and $lanes -and -not $uninstall) {
     $found = Resolve-Tool $name
     if ($found) { $lane[$agent] = $found }
   }
-  if ($laneNames -contains 'issue' -and -not $lane.codex) { Fail "codex is required by the issue lane but was not found: $(if ($env:CODEX_BIN) { $env:CODEX_BIN } else { 'codex' })" }
+  if (($laneNames -contains 'issue' -or $laneNames -contains 'ci') -and -not $lane.codex) { Fail "codex is required by the issue and ci lanes but was not found: $(if ($env:CODEX_BIN) { $env:CODEX_BIN } else { 'codex' })" }
   $nodeName = 'node'; if ($env:NODE_BIN) { $nodeName = $env:NODE_BIN }
   $node = Resolve-Tool $nodeName
   # Task Scheduler gives no per-task PATH; tool directories first (npm shims need node), then the install-time PATH.

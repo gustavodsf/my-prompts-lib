@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # context.sh <outDir>
-# Pre-computes the historical evidence all five lanes need: blame for the changed hunks,
+# Pre-computes the historical evidence every lane needs: blame for the changed hunks,
 # prior PRs that touched the same files, and the review comments left on those PRs.
 #
 # Gathered ONCE, read five times. Each lane still judges the evidence independently -- that
@@ -12,7 +12,7 @@ OUT="${1:?usage: context.sh <outDir>}"
 REPO="${WATCHDOG_REPO:-$HOME/dev/Delivery-API}"
 BASE="${WATCHDOG_BASE:-test}"
 MAX_PRIOR="${WATCHDOG_MAX_PRIOR_PRS:-6}"
-# Blame scales with (files x changed lines) and is injected into all five lanes, so it is the
+# Blame scales with (files x changed lines) and is injected into every lane, so it is the
 # one input that can silently dwarf the diff. Measured 2026-08-26: an 81-file PR
 # produced 367k chars = ~92k tokens per lane, ~460k across five. Capped, and what gets
 # dropped is always stated -- a truncated file that claims to be complete is worse than none.

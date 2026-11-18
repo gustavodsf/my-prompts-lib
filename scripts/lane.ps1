@@ -56,13 +56,12 @@ function Require-Tool([string]$Name) {
 Require-Tool 'claude'; Require-Tool 'gh'; Require-Tool 'git'
 foreach ($agent in @('grok', 'gemini')) { if ($conf.ContainsKey("${agent}_bin")) { Require-Tool $agent } }
 
-# The agents table is validated before any agent runs; the ci lane's fixer is this claude session.
+# The agents table is validated before any agent runs. The ci fixer is the implement agent (Codex).
 $agentsTable = Join-Path (Join-Path $runnerDir 'lanes') 'agents.yml'
 foreach ($file in @($agentsTable, (Join-Path $runnerDir 'resolve-agents.ps1'), (Join-Path $runnerDir 'agent-run.ps1'))) {
   if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { Fail 'agents table or agent runner is missing beside lane.ps1 (reinstall the lanes)' }
 }
-$implementer = ''; if ($lane -eq 'ci') { $implementer = 'claude' }
-try { $agents = Format-AgentTable (Resolve-AgentTable $agentsTable $configFile $implementer) } catch { Fail "invalid agents table: $($_.Exception.Message)" }
+try { $agents = Format-AgentTable (Resolve-AgentTable $agentsTable $configFile) } catch { Fail "invalid agents table: $($_.Exception.Message)" }
 
 # The runner passes the token through the environment so the model never reads or types it.
 $botToken = ''
@@ -149,7 +148,6 @@ try {
   $promptCopy = Join-Path $lockDir 'prompt'
   Write-Utf8File $promptCopy $prompt
 
-  if ($lane -eq 'ci') { $childEnv['APOLO_SDLC_IMPLEMENTER'] = 'claude' }
   Add-Utf8File $laneLog "=== $(Stamp) $lane lane start ===`n"
   $r = Invoke-Native $conf['claude_bin'] @('-p', '--dangerously-skip-permissions', '--settings', $denyFile, '--max-turns', $conf['max_turns']) `
     -StdinFile $promptCopy -WorkingDirectory $conf['checkout'] -Set $childEnv -TimeoutSeconds ([int]$conf['timeout_seconds'])

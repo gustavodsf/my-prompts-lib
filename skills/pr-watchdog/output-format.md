@@ -42,7 +42,7 @@ reviewedAt: <UTC timestamp>
 - **New**: <this pass only, including anything the fix introduced>
 - **Dropped — not re-raised**: <previous finding no lane raised, no fix visible>
 
-## Escalate — 1 of 5 lanes, but Critical
+## Escalate — 1 of 2 lanes, but Critical
 (omit if none)
 
 ## Unmet acceptance criteria
@@ -121,21 +121,17 @@ reviewedAt: <UTC timestamp>
 
 ## Findings by lane count
 
-### 5 of 5 and 4 of 5
+### 2 of 2
 | Sev | Location | Finding | Why it breaks | Lanes |
 |---|---|---|---|---|
 
-### 3 of 5 and 2 of 5
-| Sev | Location | Finding | Lanes |
-|---|---|---|---|
-
-### 1 of 5
+### 1 of 2 (or a single-lane run)
 | Sev | Location | Finding | Lane |
 |---|---|---|---|
 
 ## Cut from summary.md
 <every finding held back, with its lane count and one line on why it was cut. This section
-is the tuning signal — a nit that keeps resurfacing at 5 of 5 means the boundary is wrong.>
+is the tuning signal — a nit that keeps resurfacing at 2 of 2 means the boundary is wrong.>
 
 ## Needs a decision record
 - `file:line` — <the question, and the lane count>
@@ -148,7 +144,7 @@ is the tuning signal — a nit that keeps resurfacing at 5 of 5 means the bounda
   you tell a careful lane from a lazy one when auditing the run.>
 
 ## For the PR description
-<merge the lanes' PR-description blocks. Keep an edge case only when 4+ lanes found it. Keep every
+<merge the lanes' PR-description blocks. Keep an edge case only when both lanes found it. Keep every
 untested path any lane found — that section is mechanical, so a lane finding one the others
 missed is a hit, not noise. Empty sections read `None`.>
 
