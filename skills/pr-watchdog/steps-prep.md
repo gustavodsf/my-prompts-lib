@@ -62,7 +62,7 @@ exceeds the cap, name the deferred PRs. Never truncate silently.
 Returns JSON with `worktree`, `outDir`, `short`, `sha`, `ticket`, `ticketUrl`,
 `localSpec`, `diffLines`, `changedFiles`.
 
-If `diffLines` exceeds 8000, say so and ask before proceeding — five full reviews of a
+If `diffLines` exceeds 8000, say so and ask before proceeding — even 1–2 full reviews of a
 diff that size is expensive and the lanes thin out.
 
 ## Step 2b — Eligibility gate
@@ -70,8 +70,8 @@ diff that size is expensive and the lanes thin out.
 `prep.sh` exits 3 with a `skipped` field when the diff is empty — a merged PR whose head is
 already in `test`. Record it and move on; do not spawn lanes.
 
-Then judge whether five Opus lanes are worth it. Measured floor is ~77k output tokens on a
-one-file, six-line PR, so a trivial change costs the same as a real one.
+Then judge whether a Codex/Grok panel is worth it. A trivial change still pays the full
+lane cost, so skip the obvious no-ops below.
 
 **Skip and say why** when the diff is only: a version bump, a lockfile, generated output, a
 dependency bump with no code change, or a pure revert of a commit already reviewed. **Never
@@ -82,11 +82,11 @@ to gate what reaches `test`.
 
 ## Step 3 — Fetch the ticket — the watchdog does this, never a lane
 
-**Only the watchdog touches ClickUp.** Five lanes each fetching the ticket would give five
+**Only the watchdog touches ClickUp.** Two lanes each fetching the ticket would give two
 slightly different readings of the requirements, and then a disagreement about the code
-could really be a disagreement about what was asked for. One fetch, one `ticket.md`, five
-lanes reading the same bytes. Same target, same analysis layer — that is what makes a
-4-of-5 vote mean anything.
+could really be a disagreement about what was asked for. One fetch, one `ticket.md`, every
+lane reading the same bytes. Same target, same analysis layer — that is what makes a
+2-of-2 vote mean anything.
 
 The lane prompt forbids lanes from calling ClickUp or Chrome. Keep it that way.
 
@@ -229,54 +229,31 @@ source: clickup-mcp | clickup-chrome | local-spec | UNAVAILABLE
 Set `source:` to `clickup-mcp`, `clickup-chrome`, `local-spec`, or `UNAVAILABLE` so the
 summary can say how the requirements were obtained.
 
-## Step 4 — Five lanes, in isolation
+## Step 4 — One or two lanes, in isolation
 
-Read `lane-prompt.md` beside this file. Substitute `{{LANE}}` (`a`–`e`), `{{PR}}`,
+Read `lane-prompt.md` beside this file. Substitute `{{LANE}}` (`codex` or `grok`), `{{PR}}`,
 `{{SHORT}}`, `{{WORKTREE}}`, `{{OUTDIR}}`, `{{BASE}}` (`test`), `{{TICKET}}`.
 
-Spawn **all five Agent calls in a single message** so they run concurrently in isolated
-contexts. Every call carries **both**:
+Run **one or two** fresh, read-only CLI processes, not Claude Agent spawns and not Opus:
 
-```
-subagent_type: "general-purpose"
-model: "opus"
-```
+- Codex, when `codex` is available, writing `<outDir>/lane-codex.md`
+- Grok, when `grok` is available, writing `<outDir>/lane-grok.md`
 
-**`model: "opus"` is not optional and has no default.** See *The model contract* above.
-
-This skill's `model: opus` frontmatter applies to the invoking turn only. A lane spawned
-without an explicit model inherits whatever the calling session is running, so the panel
-silently becomes five of whatever the user happened to be on, and nothing in the output
-says so.
-
-**Measured 2026-09-16:** two engineers ran the watchdog from Fable sessions and reported the
-usage burn at standup. Six Fable agents, not five Opus and one Fable. The panel was never
-five Opus and the reports did not say so.
-
-**Never run the lanes on Fable.** Five Opus lanes are the design: the panel needs variance
-across five samples, and Fable's cost does not buy more of it. Fable is for the reconciler
-only, where one call on roughly 5% of the run's tokens does the hardest judgement.
-
-**Before you send the spawn message, check every call has `model: "opus"` typed on it.**
-(Model inheritance from the session was observed in practice and confirmed by a costly run.)
-
-Prompts must be byte-identical apart from the lane letter. Do not seed a lane with a hint,
-do not tell one lane what another found, do not run them sequentially. Independence is the
-only thing that makes a 4-of-5 threshold mean anything.
+Use the same non-interactive, read-only command style as `sdlc/agents.yml` (`codex exec` with
+`--sandbox read-only`, `grok --prompt-file`). Run both when both are available, in parallel.
+If only one CLI is available, run that one and say so in the report. Prompts must be
+byte-identical apart from the lane name. Do not seed a lane with a hint, do not tell one
+lane what another found, and do not reuse an implementer session. Independence is the only
+thing that makes a 2-of-2 threshold mean anything.
 
 ## Step 4b — Record the models that ran
 
-Write `<outDir>/models.json` immediately after spawning, before the lanes return:
+Write `<outDir>/models.json` immediately after starting the lanes, before they return:
 
 ```json
-{ "lanes": "opus", "reconciler": "fable", "session": "<the model you are running as>",
-  "effort": "<the session effort, which the lanes inherited>" }
+{ "lanes": ["codex", "grok"], "reconciler": "orchestrator", "session": "<the model you are running as>" }
 ```
 
-**A run whose `lanes` is anything but `opus` is not a valid five-lane review.** Say so at the
-top of your report to the user and do not present its agreement percentages as confidence —
-they describe a different panel from the one the thresholds were calibrated on.
-
-This exists because the failure is otherwise invisible: token counts per lane are recorded,
-the model behind them is not, and a four-times-cost run looks identical to a normal one until
-someone checks their weekly usage.
+List only the CLIs that actually started. A run whose `lanes` are anything but `codex`
+and/or `grok`, or whose `reconciler` is not `orchestrator`, is not a valid panel. Say so at
+the top of your report to the user and do not present its agreement counts as confidence.

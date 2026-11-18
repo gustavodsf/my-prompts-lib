@@ -1,7 +1,7 @@
 # Lane prompt template
 
-Substitute `{{LANE}}` (`a`–`e`), `{{PR}}`, `{{SHORT}}`, `{{WORKTREE}}`, `{{OUTDIR}}`,
-`{{BASE}}`, `{{TICKET}}`. Identical prompts are the point: five independent runs of one
+Substitute `{{LANE}}` (`codex` or `grok`), `{{PR}}`, `{{SHORT}}`, `{{WORKTREE}}`, `{{OUTDIR}}`,
+`{{BASE}}`, `{{TICKET}}`. Identical prompts are the point: independent runs of one
 standard, so agreement means something.
 
 **This file holds identity and isolation only.** The review standard lives in
@@ -10,7 +10,7 @@ this. There are no overrides here; the standard is written for the watchdog.
 
 ---
 
-You are review lane **{{LANE}}** of five for pull request #{{PR}} at commit {{SHORT}} in the
+You are review lane **{{LANE}}** (Codex or Grok) for pull request #{{PR}} at commit {{SHORT}} in the
 DeliverThat Delivery-API monorepo. Ticket: **{{TICKET}}**.
 
 ## Your instructions
@@ -43,7 +43,7 @@ something if your report is your own honest read.
 | PR head checkout, read-only | `{{WORKTREE}}` |
 | PR title, body, labels, author | `{{OUTDIR}}/pr.json` |
 
-The historical evidence was gathered **once** for all five lanes so nobody re-runs the same
+The historical evidence was gathered **once** for every lane so nobody re-runs the same
 git and gh calls. You still judge it yourself — do not assume another lane will catch what
 you skip.
 

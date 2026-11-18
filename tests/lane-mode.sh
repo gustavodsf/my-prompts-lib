@@ -25,7 +25,7 @@ require_text "$shared_rules" '## Lane mode'
 require_text "$shared_rules" 'lane-mode.md'
 require_text "$shared_rules" '- **Guided mode:** the user supplies a ClickUp or Jira task.'
 require_text "$shared_rules" 'Start only after the user says `vamos trabalhar <issue-number>`.'
-require_text "$shared_rules" 'Write a failing test when meaningful.'
+require_text "$shared_rules" 'Tests after the change.'
 
 lane_skills=(sdlc-plan sdlc-intake sdlc-implement sdlc-qa sdlc-evidence sdlc-review sdlc-pr sdlc-github-issue)
 for skill in "${lane_skills[@]}"; do

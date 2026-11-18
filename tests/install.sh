@@ -757,12 +757,10 @@ if CODEX_BIN="$test_root/absent/codex" run_lanes https://github.com/lanes/demo -
   fail 'installer scheduled the issue lane without codex'
 fi
 grep -qF 'codex' "$test_root/lane.err" || fail "installer did not explain the missing codex: $(cat "$test_root/lane.err")"
-CODEX_BIN="$test_root/absent/codex" run_lanes https://github.com/lanes/demo --lanes ci --checkout "$lane_checkout" > /dev/null \
-  || fail 'installer required codex for the ci lane'
-[[ "$(count_marker "$ci_marker")" == 1 ]] || fail 'ci lane was not scheduled without codex'
-if grep -q '^codex_bin=' "$lane_runner_dir/project.conf"; then
-  fail 'installer recorded codex for a ci-only install without codex'
+if CODEX_BIN="$test_root/absent/codex" run_lanes https://github.com/lanes/demo --lanes ci --checkout "$lane_checkout" 2> "$test_root/lane-ci.err"; then
+  fail 'installer scheduled the ci lane without codex'
 fi
+grep -qF 'codex' "$test_root/lane-ci.err" || fail "installer did not explain the missing codex for ci: $(cat "$test_root/lane-ci.err")"
 
 accented_checkout="$test_root/projeto-ã/app"
 mkdir -p "$accented_checkout/.git"

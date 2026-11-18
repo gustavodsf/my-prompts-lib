@@ -2,18 +2,18 @@
 
 Read when invoked with `--local`. Rules in [SKILL.md](SKILL.md) still apply.
 
-## Local mode — five lanes on your working tree, before any PR
+## Local mode — 1–2 Codex/Grok lanes on your working tree, before any PR
 
-`/pr-watchdog --local` reviews **uncommitted work**, with the same five lanes, the same
-standard and the same agreement percentages as a PR review. Use it to get the watchdog's
+`/pr-watchdog --local` reviews **uncommitted work**, with the same 1–2 Codex/Grok lanes, the same
+standard and the same agreement rule as a PR review. Use it to get the watchdog's
 verdict before you open the PR, not after.
 
 ```bash
 ~/.claude/skills/pr-watchdog/scripts/prep-local.sh [base]
 ```
 
-Then Steps 3–5 exactly as for a PR: fetch the ticket, spawn five lanes from
-`lane-prompt.md`, reconcile on Fable. The bundle shape is identical, so nothing downstream
+Then Steps 3–5 exactly as for a PR: fetch the ticket, run the Codex/Grok lanes from
+`lane-prompt.md`, reconcile as the orchestrator. The bundle shape is identical, so nothing downstream
 changes.
 
 ### What differs, and why
@@ -32,7 +32,7 @@ changes.
   required gate skipping.** Never return `BLOCKED — no CI evidence` in local mode. Report CI
   as "not run — no PR yet" and let the findings decide the verdict.
 - **The window budget does not apply.** A local run is a deliberate request, not a sweep. Say
-  the cost in the report — a five-lane review is 6–60M tokens — so the choice is informed.
+  the cost in the report so the choice is informed.
 
 ### The snapshot, and why it is built the way it is
 
@@ -42,7 +42,7 @@ at it. Working tree, index and stash list are all untouched.
 Two reasons it is not simpler:
 
 - **Lanes must review the same bytes.** Reading the live tree while you keep typing means
-  five lanes review five different states, and the agreement percentage stops meaning
+  the lanes review different states, and the agreement count stops meaning
   anything.
 - **`git stash create` is not sufficient — it excludes untracked files.** Measured on
   a real 50-file feature: 11 changed paths were untracked, and they held the entire new

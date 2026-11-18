@@ -4,31 +4,24 @@ Use this procedure for the final review of an approved feature and for every fol
 
 ## Reviewers
 
-The reviewer is the `review` agent in `sdlc/agents.yml`, and never the agent that implemented the change (see `SDLC.md#agents-per-phase`). If it is unavailable, record the limitation and do not report review completion. Disagreements after one round go to the `tiebreak` agent.
+The main reviewer is the `review` agent in `sdlc/agents.yml` (default Grok), and never the agent that implemented the change (see `SDLC.md#agents-per-phase`). If it is unavailable, record the limitation and do not report review completion. Disagreements after one round go to the `tiebreak` agent.
 
-Prepare one shared brief: feature objective, acceptance criteria, recorded base and feature commits, complete diff, relevant full-file context, owned files or flows, and claims made in the task, issue, or pull request that need independent verification. Run four independent reviewers scoped to the feature diff:
+Prepare one shared brief: feature objective, acceptance criteria, recorded base and feature commits, complete diff, relevant full-file context, owned files or flows, and claims made in the task, issue, or pull request that need independent verification. The main reviewer covers, in one report, correctness and regressions, error handling and test coverage, performance (N+1, unbounded reads, pagination, indexes, repeated I/O, cleanup; require evidence for performance claims), security (`security-checklist.md`; tenant scoping, secret/cookie/token/PII exposure, least-privilege AWS; AWS writes in automated flows are a policy violation), and duplication and project patterns (reuse from `codemap.md`, conflicting conventions, and the structural anti-patterns in [anti-patterns.md](anti-patterns.md), cited by `AP-XXX`). When relevant, also check reliability, data and compatibility, observability, and integrations and cost.
 
-1. Correctness, regressions, error handling, and test coverage.
-2. Performance: N+1 queries, unbounded reads, pagination, inefficient joins, missing indexes for new hot queries, repeated network or disk work, avoidable serialization, cache behavior, and resource cleanup. Require query or benchmark evidence for performance claims.
-3. Security: apply `security-checklist.md`; check tenant scoping, secret/cookie/token/PII exposure in code or logs, sensitive error responses, and least-privilege AWS access. AWS writes in automated flows are a policy violation.
-4. Duplication and project patterns: duplicated rules, validation, mappings, contracts, queries, UI components, or helpers; an existing pattern the change should reuse; a new convention that conflicts with project practice; and the structural anti-patterns in [anti-patterns.md](anti-patterns.md) (god class, long method, feature envy, shotgun surgery, swallowed errors, dead or speculative code), cited by `AP-XXX`.
-
-When relevant, each area also checks reliability (idempotency, retries, timeouts, partial failure, rollback), data and compatibility (migrations, contracts, defaults, upgrade/rollback), observability (sanitized logs, actionable errors), accessibility and UI (keyboard, focus, contrast, responsive layout, design system), and integrations and cost (rate limits, duplicate calls, payload size).
+If the change has a user-visible UI, also dispatch the `review_ui_ux` agent (default Codex; see [review-ui-ux.md](review-ui-ux.md)). That lens may share a CLI with the implementer: it still runs in a fresh read-only session with no implementer context.
 
 Reviewers may read surrounding code only to understand direct interactions, confirm a regression caused by the feature, or identify code it should reuse. Do not report unrelated pre-existing problems.
 
 ## Rounds
 
-Each review round lives in `project-doc/<task-or-issue-id>/round-<N>/` (or `<specDir>/round-<N>/` in a lane), one file per reviewer:
+Each review round lives in `project-doc/<task-or-issue-id>/round-<N>/` (or `<specDir>/round-<N>/` in a lane):
 
-- `review-correctness.md`
-- `review-performance.md`
-- `review-security.md`
-- `review-duplication.md`
+- `review.md` — the main `review` agent's report (always required)
+- `review-ui.md` and `review-ux.md` — only when `review_ui_ux` was spawned for this change
 
-Each file follows [output.md](output.md) and starts with `VERDICT: PASS | CHANGES | BLOCKED` on line 1. Treat a first line that still uses `Approved`, `Changes Requested`, or `Blocked` as `PASS`, `CHANGES`, or `BLOCKED`. Run all four reviewers in the same round. The round closes only when all four files exist and each has a readable first-line verdict. Never resume the implementer mid-round. If a reviewer finishes without writing its file, or writes a first line that is not a verdict, do not close the round.
+Each file follows [output.md](output.md) and starts with `VERDICT: PASS | CHANGES | BLOCKED` on line 1. Treat a first line that still uses `Approved`, `Changes Requested`, or `Blocked` as `PASS`, `CHANGES`, or `BLOCKED`. The round closes only when every required file exists and has a readable first-line verdict. Never resume the implementer mid-round. If a reviewer finishes without writing its file, or writes a first line that is not a verdict, do not close the round.
 
-After the round closes, write a short consolidation as `review.md` in the task folder (never committed): overall `VERDICT` on line 1 (`BLOCKED` if any reviewer is `BLOCKED`; `CHANGES` if any is `CHANGES` and none is `BLOCKED`; `PASS` only if all four are `PASS`), plus base and reviewed commits, diff scope, checks run, findings with status and disposition, accepted risks, and QA impact.
+After the round closes, write a short consolidation as `review.md` in the task folder (never committed; distinct from `round-<N>/review.md`): overall `VERDICT` on line 1 (`BLOCKED` if any required reviewer is `BLOCKED`; `CHANGES` if any is `CHANGES` and none is `BLOCKED`; `PASS` only if every required file is `PASS`), plus base and reviewed commits, diff scope, checks run, findings with status and disposition, accepted risks, and QA impact.
 
 ## Findings
 
@@ -36,7 +29,7 @@ Every finding meets the bar in `SKILL.md`: named failure scenario, `file:line`, 
 
 ## Follow-up review — delta mode
 
-After approved corrections, do not repeat a full review. Give the reviewers the previous `review.md` findings, the previous `round-<N>/` files, and only the correction diff. Write the follow-up into `round-<N+1>/`. Rerun only the affected review areas in depth; unaffected reviewers still write their file (`PASS`, noting the area was unchanged) so the round can close. Close that round only when all four files exist, before any further implementation.
+After approved corrections, do not repeat a full review. Give the reviewers the previous `review.md` findings, the previous `round-<N>/` files, and only the correction diff. Write the follow-up into `round-<N+1>/`. Rerun the main review, and the UI/UX lenses if they were required for the original change (or if the correction introduced a visual change). Unaffected lenses still write their file (`PASS`, noting the area was unchanged) so the round can close. Close that round only when every required file exists, before any further implementation.
 
 1. Classify each prior finding as **Fixed**, **Partially addressed**, **Accepted as-is** (with the user's recorded decision), or **Superseded**.
 2. Report a new finding only when the correction diff introduced it and it is P0/P1, or it directly breaks an approved correction. Record lower-severity observations as notes, not new findings.

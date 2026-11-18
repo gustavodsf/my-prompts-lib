@@ -23,9 +23,9 @@ Only these rules change; every other rule in `SDLC.md`, `error.md` and the skill
 - **Authorization.** An open issue authored by the owner is authorized for planning; implementation starts only after plan approval. The local `vamos trabalhar` authorization state is not used.
 - **Task documents.** Store them in the spec folder the lane prompt chooses (`<docs>/spec-XXXX/`) instead of `project-doc/<task-or-issue-id>/`, still out of commits.
 - **Validation surface.** No visible terminal or browser exists. Run HTTP checks and browser flows headless, save their output as evidence, and record "headless lane run" as a limitation. Never claim a visible run.
-- **QA iterations.** Run the second, blind iteration with the opposite agent (Codex) when it is available; otherwise record the limitation.
+- **QA iterations.** Run the second, blind iteration in a fresh `qa` session (the same agent is fine; do not switch to Claude just to be "opposite"). Record a limitation if a fresh session cannot be started.
 - **Evidence.** Post only sanitized summaries. Screenshots are published on the evidence branch named in the configuration block, never merged.
-- **Review.** Review the feature diff against `origin/<default branch>` of the tracked repository, using the issue and `design.md` as the acceptance criteria instead of a ClickUp ticket. Write the record to the spec folder and post a numbered summary as the lane prompt describes. The opposite-agent rule still holds: if Codex is unavailable, the review is not complete.
+- **Review.** The main review is the `review` agent (Grok), never the implementer. If the change has a user-visible UI, also dispatch `review_ui_ux` (Codex) for `review-ui.md` and `review-ux.md`. Write the record to the spec folder and post a numbered summary as the lane prompt describes. Browser checks in the lane, including UI/UX review, run headless; record "headless lane run" as a limitation and never claim a visible run. If `review` is unavailable, the review is not complete.
 - **Pull requests.** The `sdlc-pr` preconditions are satisfied by the lane's gates. Use the title format the lane prompt gives.
 
 ## What never changes

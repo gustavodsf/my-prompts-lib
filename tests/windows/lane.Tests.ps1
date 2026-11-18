@@ -19,10 +19,11 @@ function New-Lane {
 $i = [array]::IndexOf(@($args), '--max-turns')
 if ($args -contains '--settings' -and $i -ge 0 -and $args[$i + 1] -eq '60') { 'Verdict: Pass'; '- fine' }
 '@)
-  $codex = New-Fake $bin 'codex' (($Recorder -replace '__NAME__', 'codex' -replace '__STDIN__', '1') + "`n'codex done'")
+  $codex = New-Fake $bin 'codex' (($Recorder -replace '__NAME__', 'codex' -replace '__STDIN__', '1') + "`n'Verdict: Pass'
+'codex done'")
   $grok = New-Fake $bin 'grok' (($Recorder -replace '__NAME__', 'grok' -replace '__STDIN__', '0') + "`n" + @'
 $p = [IO.File]::ReadAllText($args[[array]::IndexOf(@($args), '--prompt-file') + 1])
-if ($p.Contains('Lens: security')) { 'Verdict: **Fail**'; '- leaks a token' } elseif ($p.Contains('Lens: adversarial')) { 'Verdict: Partial' } else { 'Verdict: Pass' }
+if ($p.Contains('Lens: simplicity')) { 'Verdict: **Fail**'; '- over-scoped' } elseif ($p.Contains('Lens: adversarial')) { 'Verdict: Partial' } else { 'Verdict: Pass' }
 '@)
   $gh = New-Fake $bin 'gh' "if (`$env:FAKE_GH_FAIL) { exit 1 }; if (`$args[0] -eq 'run') { '9 completed success' } else { [string]`$env:FAKE_GH_OUT }"
   $runner = Join-Path $root 'runner dir'
@@ -71,7 +72,7 @@ Invoke-TestBlock 'issue lane runs claude with the prompt on stdin, deny settings
   Assert-Contains $c[0].stdin 'Lane mode: active' 'prompt header'
   Assert-Contains $c[0].stdin "checkout: $($e.Checkout)" 'checkout in prompt (with spaces)'
   Assert-Contains $c[0].stdin 'agent-run.ps1' 'agent_runner line'
-  Assert-Contains $c[0].stdin 'agents: design=claude' 'agents line'
+  Assert-Contains $c[0].stdin 'agents: design=codex' 'agents line'
   Assert-True ($c[0].gh -eq 'ghs_bot123') 'the lane claude gets the bot token'
   Assert-True ($c[0].lane -eq 'issue' -and -not $c[0].implementer) 'issue lane env'
   Assert-True ((Get-Item -LiteralPath $c[0].cwd).FullName.TrimEnd('\', '/') -eq (Get-Item -LiteralPath $e.Checkout).FullName.TrimEnd('\', '/')) 'claude runs in the checkout'
@@ -85,13 +86,14 @@ Invoke-TestBlock 'issue lane runs claude with the prompt on stdin, deny settings
   Assert-True (@(Get-Calls $e 'claude').Count -eq 1) 'a GitHub change must run claude'
 }
 
-Invoke-TestBlock 'ci lane: claude is the implementer, so codex reviews' {
+Invoke-TestBlock 'ci lane: codex is the implementer, grok reviews' {
   $e = New-Lane
   $r = Run-Lane $e 'ci'; Assert-True ($r.ExitCode -eq 0) "ci lane failed: $($r.Output)"
   $c = @(Get-Calls $e 'claude')[0]
-  Assert-True ($c.implementer -eq 'claude' -and $c.lane -eq 'ci') 'ci env'
-  Assert-Contains $c.agents 'implement=claude' 'implementer in agents'
-  Assert-NotContains $c.agents 'review=claude' 'claude may not review itself'
+  Assert-True ((-not $c.implementer) -and $c.lane -eq 'ci') 'ci env does not force a claude implementer'
+  Assert-Contains $c.agents 'implement=codex' 'implementer in agents'
+  Assert-Contains $c.agents 'review=grok' 'grok reviews'
+  Assert-NotContains $c.agents 'review=codex' 'codex may not review itself'
   Assert-True (-not $c.gh) 'no token file, no GH_TOKEN'
 }
 
@@ -147,18 +149,18 @@ Invoke-TestBlock 'agent-run implement: codex template, prompt on stdin, no token
   Assert-True ($c.pushurl -eq 'no-push://agent-run.disabled' -and $c.prompt -eq '0') 'push guardrail'
   Assert-Contains ([IO.File]::ReadAllText($metrics)) '| implement | codex |' 'metrics row'
   $r = Run-Agent $e @('review', $prompt, $e.Checkout)
-  Assert-True (@(Get-Calls $e 'claude').Count -eq 1) 'review runs claude'
+  Assert-True (@(Get-Calls $e 'grok').Count -eq 1) 'review runs grok'
   $r = Run-Agent $e @('bogus', $prompt, $e.Checkout); Assert-True ($r.ExitCode -eq 2) 'unknown phase'
 }
 
-Invoke-TestBlock 'goldfish panel: lenses alternate grok/claude, worst verdict wins' {
+Invoke-TestBlock 'goldfish panel: lenses alternate grok/codex, worst verdict wins' {
   $e = New-Lane
   $prompt = Join-Path $e.Root 'design.md'; Write-Utf8File $prompt 'design'
   $r = Run-Agent $e @('goldfish-panel', $prompt, $e.Checkout, '', 'feature')
-  Assert-True ($r.ExitCode -eq 1) "security Fail must fail the panel: $($r.Output)"
+  Assert-True ($r.ExitCode -eq 1) "simplicity Fail must fail the panel: $($r.Output)"
   Assert-Contains $r.Stdout '### comprehension (grok): Pass' 'lens 1 on grok'
-  Assert-Contains $r.Stdout '### adversarial (claude): Pass' 'lens 2 on claude'
-  Assert-Contains $r.Stdout '### security (grok): Fail' 'lens 3 on grok'
+  Assert-Contains $r.Stdout '### testability (codex): Pass' 'lens 2 on codex'
+  Assert-Contains $r.Stdout '### simplicity (grok): Fail' 'lens 3 on grok'
   Assert-Contains $r.Stdout 'PANEL: FAIL' 'panel verdict'
   Assert-True (@(Get-Calls $e 'grok' | Where-Object { $_.gh }).Count -eq 0) 'panel agents get no token'
   $r = Run-Agent $e @('goldfish-panel', $prompt, $e.Checkout, '', 'bug')
@@ -167,7 +169,7 @@ Invoke-TestBlock 'goldfish panel: lenses alternate grok/claude, worst verdict wi
   Assert-True (@(Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Filter 'apolo-panel-*' -ErrorAction SilentlyContinue).Count -eq 0) 'panel temp dir removed'
   $e.Conf.Remove('grok_bin'); Write-Conf $e
   $r = Run-Agent $e @('goldfish-panel', $prompt, $e.Checkout, '', 'feature')
-  Assert-Contains $r.Stdout '### adversarial (claude): Pass' 'without grok the pool is claude only'
+  Assert-Contains $r.Stdout '### simplicity (codex): Pass' 'without grok the pool is codex only'
 }
 
 Invoke-TestBlock 'diff-lines and pseudo-check' {
@@ -194,7 +196,7 @@ Invoke-TestBlock 'resolve-agents fallbacks match the shell version' {
   Assert-True ($r.ExitCode -eq 0) "resolve failed: $($r.Output)"
   $e.Conf.Remove('grok_bin'); Write-Conf $e
   $r = Invoke-Script $script @((Join-Path (Join-Path $e.Runner 'lanes') 'agents.yml'), (Join-Path $e.Runner 'project.conf'))
-  Assert-Contains $r.Stdout 'goldfish=claude' 'goldfish falls back to a fresh claude'
+  Assert-Contains $r.Stdout 'goldfish=codex' 'goldfish falls back to a fresh design (codex)'
   Assert-Contains $r.Stdout 'tiebreak=human' 'no third agent'
   if (-not $ApoloIsWindows) {
     $sh = & bash (Join-Path $RepoRoot 'scripts/resolve-agents.sh') (Join-Path (Join-Path $e.Runner 'lanes') 'agents.yml') (Join-Path $e.Runner 'project.conf') 2>&1

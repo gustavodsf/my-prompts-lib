@@ -142,7 +142,6 @@ github_fingerprint() {
 }
 
 run_claude() {
-  [[ "$lane" != 'ci' ]] || export APOLO_SDLC_IMPLEMENTER=claude
   [[ -z "$bot_token" ]] || export GH_TOKEN="$bot_token"
   cd "$conf_checkout" && APOLO_SDLC_LANE="$lane" APOLO_SDLC_AGENTS="$agents" exec "$conf_claude_bin" -p --dangerously-skip-permissions \
     --settings "$deny_file" --max-turns "$conf_max_turns" < "$prompt_copy"
@@ -171,13 +170,11 @@ for agent in grok gemini; do
   value="conf_${agent}_bin"
   [[ -z "${!value:-}" ]] || require_tool "$agent"
 done
-# The agents table is validated before any agent runs; the ci lane's fixer is this claude session.
+# The agents table is validated before any agent runs. The ci fixer is the implement agent (Codex).
 agents_table="$runner_dir/lanes/agents.yml"
 [[ -f "$agents_table" && -x "$runner_dir/resolve-agents.sh" && -x "$runner_dir/agent-run.sh" ]] \
   || fail "agents table or agent runner is missing beside lane.sh (reinstall the lanes)"
-implementer_args=()
-[[ "$lane" != 'ci' ]] || implementer_args=(--implementer claude)
-agents="$("$runner_dir/resolve-agents.sh" "$agents_table" "$runner_dir/project.conf" "${implementer_args[@]}" 2>&1)" \
+agents="$("$runner_dir/resolve-agents.sh" "$agents_table" "$runner_dir/project.conf" 2>&1)" \
   || fail "invalid agents table: $agents"
 load_bot_token
 

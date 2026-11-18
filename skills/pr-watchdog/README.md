@@ -1,14 +1,14 @@
 # PR Watchdog — what this is
 
-Two skills. One reviews a diff; the other runs that review five times and reconciles the
+Two skills. One reviews a diff; the other runs that review on 1–2 Codex/Grok lanes and reconciles the
 results.
 
 | Skill | Does | Read it if you want to know |
 |---|---|---|
 | **`sdlc-review`** | Reviews one diff to the DeliverThat standard | **what "reviewed" means.** This is the standard itself — 307 lines, and the only place review behaviour is defined. |
-| **`pr-watchdog`** | Watches GitHub, runs five isolated reviews per PR, reconciles them | how confidence is produced, and what stops it costing too much |
+| **`pr-watchdog`** | Watches GitHub, runs 1–2 isolated Codex/Grok reviews per PR, reconciles them | how confidence is produced, and what stops it costing too much |
 
-**Version**: `pr-watchdog` 2.4.0 · `sdlc-review` standard 1.1.0
+**Version**: `pr-watchdog` 3.0.0 · `sdlc-review` standard 1.1.0
 
 ## If you have two minutes
 
@@ -24,8 +24,8 @@ Everything else is machinery around that bar.
 1. **`sdlc-review/SKILL.md`** — the four phases: find → verify → sweep → classify. Note
    Phase 2: every candidate is labelled CONFIRMED, PLAUSIBLE or REFUTED, and REFUTED ones are
    dropped rather than downgraded into the report.
-2. **`SKILL.md`** Step 5 — how five independent reports become one verdict, and
-   why a finding nobody could verify caps at 60% and cannot block.
+2. **`SKILL.md`** Step 5 — how one or two independent reports become one verdict, and
+   why a finding nobody could verify cannot be treated as confirmed or block.
 3. **`SKILL.md`** *Cost model* — why cost is context × turns, and the four gates.
 
 ## Three ways to run it
@@ -33,16 +33,17 @@ Everything else is machinery around that bar.
 | Command | Reviews | Reviewers |
 |---|---|---|
 | `/sdlc-review` | your branch | one — you, reading the standard |
-| **`/pr-watchdog --local`** | **your uncommitted work** | **five, with agreement percentages** |
-| `/pr-watchdog` (or the hourly routine) | an open PR | five |
+| **`/pr-watchdog --local`** | **your uncommitted work** | **1–2 Codex/Grok lanes, with `2/2` / `1/2` agreement** |
+| `/pr-watchdog` (or the hourly routine) | an open PR | 1–2 Codex/Grok lanes |
 
-The middle one is the point of having a standard rather than a tool: the same five-lane
+The middle one is the point of having a standard rather than a tool: the same
 verdict, before the PR exists, on work that is still on your machine.
 
 ## What it does, plainly
 
-- **Five reviewers, not one.** Identical prompts, isolated contexts, no visibility of each
-  other. Confidence is how many independently agreed: 100% = five, 80% = four, down to 20%.
+- **One or two reviewers, not five Opus lanes.** Identical prompts, isolated Codex/Grok
+  contexts, no visibility of each other. A finding is confirmed at `2/2`; `1/2` (or a
+  single-lane run) is a lead, not a verdict.
 - **Reviews against the ticket**, not just the code. Clean code that does not do what the
   ticket asked is a spec failure.
 - **Three axes on every finding** — severity (impact), verify label (is the mechanism real),
@@ -55,7 +56,7 @@ verdict, before the PR exists, on work that is still on your machine.
   in, and a skipped required gate is reported as a finding rather than treated as a pass.
 - **Cannot verify some premises.** Anything resting on a value in an environment, a job that
   actually ran, or a table holding rows is capped and carries the command that would settle
-  it. This rule exists because five reviewers once blocked a legitimate PR on one shared
+  it. This rule exists because reviewers once blocked a legitimate PR on one shared
   unverifiable assumption.
 - **Recall is unmeasured.** It finds real problems and filters its own noise. What it *misses*
   has not been measured — that needs the calibration run described in
@@ -152,7 +153,7 @@ reconciled `summary.md`. Read the summary; the lane files are the evidence behin
 
 ## The ticket fetch
 
-Acceptance criteria come from ClickUp, and the watchdog fetches them **once** so all five
+Acceptance criteria come from ClickUp, and the watchdog fetches them **once** so all
 lanes assess the same requirements. Two paths:
 
 - **ClickUp MCP** — preferred, works unattended. Needs `mcp__clickup__*` connected.

@@ -24,7 +24,7 @@ Keep two layers, and nothing else:
 
 `codemap.md` is generated from the code (`codemap.mjs` in `sdlc-project-context`, or `npx repomix --compress` for non-TypeScript projects) and never hand-written. Grep it on demand. Hand-written documents never list method or function names.
 
-Before implementation, the design passes the [Goldfish check](goldfish.md): a parallel panel of context-free reviewers (one lens each: comprehension, adversarial, security, testability, simplicity; bugs run comprehension and testability) grades it Pass/Partial/Fail; any Fail blocks.
+Before implementation, the design passes the [Goldfish check](goldfish.md): a parallel panel of context-free reviewers, one lens each (lenses from `agents.yml`; default: bug → comprehension, testability; feature → comprehension, testability, simplicity), grades it Pass/Partial/Fail; any Fail blocks.
 
 Keep all task and context Markdown out of commits. Versioned configuration under `sdlc/` and `README.md` may be committed.
 
@@ -54,9 +54,7 @@ Every skill links here; this is the single source for these rules.
 
 ## Quality and review
 
-Write a failing test when meaningful. When it is not meaningful, obtain approval for a proportionate alternative verification.
-
-**Acceptance tests first.** Every acceptance criterion in `design.md` (`AC-n`) becomes an automated test that is written and seen failing before any production code. Implementation is done only when all AC tests pass; a skipped or deleted AC test means not done.
+**Tests after the change.** Implement the production change, then write an automated test for every acceptance criterion in `design.md` (`AC-n`) against that AC's "how to verify" (command, page, or file plus expected result). Tests stay mandatory. Implementation is done only when all AC tests pass; a skipped or deleted AC test means not done. When an automated test is not meaningful, obtain approval for a proportionate alternative verification.
 
 Code comments must be minimal. Add one only for a non-obvious invariant, constraint, compatibility need, security tradeoff, or performance reason.
 
@@ -66,20 +64,31 @@ Use `error.md` during planning, QA, and review. A repeated failure becomes an er
 
 ## Implementation modes
 
-Chosen at intake and recorded as `Mode:` in `design.md`, so the owner keeps his own mental model when he wants it. In both, the AC tests are written first and seen failing.
+Chosen at intake and recorded as `Mode:` in `design.md`, so the owner keeps his own mental model when he wants it. In both, production work comes first; the AC tests are written afterwards against each AC's how-to-verify.
 
-- **guided** (imperative): the implementer writes no production logic. It inserts `SDLC-PSEUDO` comment blocks at the exact places to change, with real calls and signatures from `codemap.md`, order, inputs and outputs, posts the `file:line` list and stops. The owner implements and says `pronto`; then tests, checks and review run. No `SDLC-PSEUDO` marker may remain before the PR (`agent-run.sh pseudo-check`).
+- **guided** (imperative): the implementer writes no production logic. It inserts `SDLC-PSEUDO` comment blocks at the exact places to change, with real calls and signatures from `codemap.md`, order, inputs and outputs, posts the `file:line` list and stops. The owner implements and says `pronto`; then the implementer writes the AC tests, runs checks and review. No `SDLC-PSEUDO` marker may remain before the PR (`agent-run.sh pseudo-check`).
 - **auto**: the agent implements in checkpoints of about `checkpoint_lines` changed lines (default 250; `agents.yml`, overridden by `project.conf`), always at a task boundary. Each checkpoint is committed and summarized (diff, tasks done, tasks next) and waits for `segue` or feedback, which is applied first. Every checkpoint is a row in `metrics.md`.
 
 ## Agents per phase
 
-[agents.yml](agents.yml) assigns an agent to each phase: `design` (Elephant, default claude), `goldfish` (default grok; the panel alternates `goldfish_agents`, default grok then a fresh claude), `implement` (default codex), `review`, and `tiebreak` (a third agent). Allowed agents: claude, codex, grok, gemini.
+[agents.yml](agents.yml) assigns an agent to each phase. Allowed agents: claude, codex, grok, gemini. In a lane, Claude is only the thin orchestrator (gates, comments, and push). Design, implement, QA and Goldfish go to Codex via `agent-run`; the main review is Grok.
+
+| Phase | Default | Notes |
+| --- | --- | --- |
+| `design` | codex | Elephant; must be write-capable; lanes dispatch it with `agent-run` |
+| `goldfish` | grok | Panel alternates `goldfish_agents` (default grok, then a fresh codex) |
+| `implement` | codex | Must be write-capable |
+| `review` | grok | Never the implementer |
+| `tiebreak` | claude | Only when review and implementer disagree; cannot be grok or codex |
+| `review_ui_ux` | codex | UI/UX lenses; may share a CLI with implement (see below) |
+| `qa` | codex | Dispatched QA, fresh session |
 
 - **An agent never reviews its own output.** `goldfish` ≠ `design`; `review` ≠ `implement`; `tiebreak` differs from both `implement` and `review`.
+- **Exception: `review_ui_ux`.** It may use the same CLI as `implement` (default Codex). It still runs in a fresh read-only session with no implementer context, and never edits production code. The resolver and evals do not apply the `review ≠ implement` rule to this lens. The main `review` stays independent.
+- **Tie-break is Claude** because the no-self-audit rule forbids `tiebreak` from being Grok (`review`) or Codex (`implement`). It is rare: it runs only when the reviewer and implementer disagree on a finding after one round; its verdict decides.
 - **Available** = non-empty command in `agents.yml` and a known binary (`<agent>_bin` in the lane's `project.conf`, otherwise `PATH`). CLIs are never guessed: no command, no agent.
-- **One fallback rule**, applied by [`scripts/resolve-agents.sh`](../scripts/resolve-agents.sh) before anything runs: `design` and `implement` must be available and listed in `write_capable`, or the run stops. `goldfish` falls back to a fresh `design`-agent process (clean context). `review` falls back to the first available agent ≠ implementer, else it is blocked. `tiebreak` falls back to the first available agent ∉ {implementer, reviewer}, else the human owner. Never self-review.
-- **Guardrails.** Lanes run every non-design agent through `agent-run.sh`: no approvals inside the agent's sandbox (Codex `workspace-write` to implement, `read-only` otherwise), `APOLO_SDLC_LANE`/`APOLO_SDLC_PHASE` exported, GitHub tokens removed and push disabled. Only the lane's Claude session pushes.
-- The tie-break runs only when the reviewer and implementer disagree on a finding after one round; its verdict decides.
+- **One fallback rule**, applied by [`scripts/resolve-agents.sh`](../scripts/resolve-agents.sh) before anything runs: `design` and `implement` must be available and listed in `write_capable`, or the run stops. `goldfish` falls back to a fresh `design`-agent process (clean context). `review` falls back to the first available agent ≠ implementer, else it is blocked. `tiebreak` falls back to the first available agent ∉ {implementer, reviewer}, else the human owner. `qa` falls back to `implement`. `review_ui_ux` is blocked if its agent is unavailable (it is allowed to equal `implement`). Never self-review for `review` or `tiebreak`.
+- **Guardrails.** Lanes dispatch design, implement, review, review_ui_ux, qa, goldfish and tiebreak through `agent-run.sh`: no approvals inside the agent's sandbox (Codex `workspace-write` for design, implement and qa, `read-only` otherwise), `APOLO_SDLC_LANE`/`APOLO_SDLC_PHASE` exported, GitHub tokens removed and push disabled. Only the lane's Claude session pushes.
 
 ## Metrics
 
@@ -88,7 +97,7 @@ Each task keeps `project-doc/<task-id>/metrics.md`, one row appended per agent r
 | Phase | Agent | Tokens (if known) | Attempt | Result |
 | --- | --- | --- | --- | --- |
 | implement | codex | 41k | 2 | AC tests pass |
-| review | claude | — | 1 | fail: 2 findings |
+| review | grok | — | 1 | fail: 2 findings |
 
 Result is pass/fail plus a few words. Before archiving the task, add one line to `INDEX.md` only if a pattern is worth keeping (for example, a phase that keeps needing retries).
 
